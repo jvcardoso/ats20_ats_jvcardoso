@@ -25,6 +25,7 @@ struct TestStorage
 {
     std::array<uint8_t, 1024> bytes;
     int operations = 0;
+    int physicalWrites = 0;
     int cutAfter = -1;
     TestStorage() { bytes.fill(255); }
     uint8_t read(uint16_t address) { return bytes.at(address); }
@@ -32,6 +33,8 @@ struct TestStorage
     {
         if (operations++ == cutAfter)
             throw std::runtime_error("power interrupted between byte operations");
+        if (bytes.at(address) != value)
+            ++physicalWrites;
         bytes.at(address) = value;
     }
     template<class T> void get(uint16_t address, T& value)
@@ -284,6 +287,36 @@ void testShortReleaseDebounce()
     testMillis += 16; button.checkEvent(countShortButtonEvents);
     assert(shortButtonEvents == 2);
     std::cout << "PASS buttons: short-release debounce with contact bounce\n";
+}
+
+void testMenuWear()
+{
+    resetRuntime(); EEPROM = TestStorage(); setup();
+    int writes = EEPROM.physicalWrites;
+    g_settingsActive = true; switchSettings();
+    g_settingsActive = false; switchSettings();
+    assert(EEPROM.physicalWrites == writes);
+
+    resetRuntime(); EEPROM = TestStorage(); setup();
+    writes = EEPROM.physicalWrites;
+    g_settingsActive = true; g_SettingEditing = false;
+    g_SettingsPage = 1; g_SettingSelected = 0;
+    g_encoderCount = 1;
+    loop();
+    assert(g_SettingSelected == 1 && !g_settingsDirty);
+    testMillis += STORE_TIME + 1; loop();
+    assert(EEPROM.physicalWrites == writes);
+
+    resetRuntime(); EEPROM = TestStorage(); setup();
+    writes = EEPROM.physicalWrites;
+    g_settingsActive = true; g_SettingEditing = true;
+    g_SettingsPage = 1; g_SettingSelected = SettingsIndex::Brightness;
+    g_encoderCount = 1;
+    loop();
+    assert(g_settingsDirty);
+    g_settingsActive = false; switchSettings();
+    assert(!g_settingsDirty && EEPROM.physicalWrites > writes);
+    std::cout << "PASS EEPROM wear: menu navigation and empty close do not write\n";
 }
 
 void testStorage()
@@ -779,7 +812,7 @@ void testSeekProtocol()
 int main()
 {
     testBatteryInitialSample(); testShortReleaseDebounce();
-    testStorage(); testControls(); testFrequencyBehavior(); testSeekStartGrid();
+    testMenuWear(); testStorage(); testControls(); testFrequencyBehavior(); testSeekStartGrid();
     testInvalidFrequencyProtection(); testRds();
     testProductionFormatting(); testContinuousSsbTuning(); testCommandTransitions(); testSeekProtocol();
     std::cout << "PASS all host regressions (USE_RDS=" << USE_RDS << ")\n";

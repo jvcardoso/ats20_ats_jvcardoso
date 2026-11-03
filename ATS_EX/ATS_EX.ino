@@ -680,7 +680,8 @@ void switchSettings()
     }
     else
     {
-        saveAllReceiverInformation();
+        if (g_settingsDirty)
+            saveAllReceiverInformation();
         showStatus();
     }
 }
@@ -783,8 +784,6 @@ void showCharge(bool forceShow)
     static int16_t averageSamples = -1; // Outside the ADC range, including a valid zero sample.
 
     int sample = analogRead(BATTERY_VOLTAGE_PIN);
-    if (sample < 0)
-        sample = averageSamples;
     if (averageSamples < 0)
     {
         averageSamples = sample;
@@ -977,7 +976,6 @@ void bandSwitch(bool up)
         g_si4735.setFrequency(nextSW);
         agcSetFunc(); //Re-apply to remove noize
         showFrequency();
-        showBandTag();
     }
     else
     {
@@ -1155,7 +1153,6 @@ void doStep(int8_t v)
 
         g_si4735.setFrequencyStep(flashRead8(&g_tabStepFM[g_FMStepIndex]));
         g_bandList[g_bandIndex].currentStepIdx = g_FMStepIndex;
-        g_si4735.setSeekFmSpacing(FM_SEEK_SPACING);
         showStep();
     }
     else
@@ -1822,7 +1819,8 @@ void loop()
             doFrequencyTune(direction);
             skipButtonEvents = true;
         }
-        resetEepromDelay();
+        if (!g_settingsActive)
+            resetEepromDelay();
     }
 
     if (!skipButtonEvents)
