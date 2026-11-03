@@ -15,9 +15,11 @@
 | **Custom Revision / Revisão Customizada** | **`ATS_EX v1.18-r3`** (`JVCARDOSO 2026` — [`jvcardoso/ats20_ats_jvcardoso`](https://github.com/jvcardoso/ats20_ats_jvcardoso)) |
 | **Original Author / Autor Original (`v1.18`)** | **[Goshante (`goshante/ats20_ats_ex`)](https://github.com/goshante/ats20_ats_ex)** |
 | **DSP Library / Biblioteca Base** | **[PU2CLR SI4735 (`pu2clr/SI4735`)](https://github.com/pu2clr/SI4735)** (inspired by `swling.ru`) |
-| **Download `v1.18-r3` (Recommended / Com RDS)** | **[`ATS_EX_v1.18-r3_RDS.hex`](https://github.com/jvcardoso/ats20_ats_jvcardoso/releases/download/v1.18-r3/ATS_EX_v1.18-r3_RDS.hex)** (`30,492` bytes Flash / `1,092` bytes SRAM) |
-| **Download `v1.18-r3` (No RDS / Sem RDS)** | **[`ATS_EX_v1.18-r3_NO_RDS.hex`](https://github.com/jvcardoso/ats20_ats_jvcardoso/releases/download/v1.18-r3/ATS_EX_v1.18-r3_NO_RDS.hex)** (`29,108` bytes Flash / `1,068` bytes SRAM) |
+| **Download `v1.18-r3` (Recommended / Com RDS)** | **[`ATS_EX_v1.18-r3_RDS.hex`](https://github.com/jvcardoso/ats20_ats_jvcardoso/releases/download/v1.18-r3/ATS_EX_v1.18-r3_RDS.hex)** (`30,648` bytes Flash / `1,078` bytes SRAM) |
+| **Download `v1.18-r3` (No RDS / Sem RDS)** | **[`ATS_EX_v1.18-r3_NO_RDS.hex`](https://github.com/jvcardoso/ats20_ats_jvcardoso/releases/download/v1.18-r3/ATS_EX_v1.18-r3_NO_RDS.hex)** (`29,276` bytes Flash / `1,054` bytes SRAM) |
 | **Download Original `v1.18` (Goshante)** | **[`ATS_EX_v1.18.hex`](https://github.com/goshante/ats20_ats_ex/releases/download/v1.18/ATS_EX_v1.18.hex)** (03.04.2024) |
+
+> **Source hardening note:** the current source tree contains post-r3 fixes and its measured sizes are shown above. The previously published r3 assets must be regenerated from this tree before they match these values; the `v1.18-r3` banner is intentionally unchanged.
 
 ---
 
@@ -47,7 +49,17 @@ Key technical improvements over upstream `v1.18`:
 - **Validated EEPROM State (`v4`/`v5`)**: Validates all stored parameters on boot and automatically resets to safe defaults if out-of-range or incompatible data is detected. Upgrading from upstream `v1.18` or `r1` restores defaults once; `r3` preserves valid `r2`/`r3` settings for the same RDS variant.
 - **Bounded RDS Buffers (`USE_RDS=1` / `USE_RDS=0`)**: Safely sanitizes PS/RT/PI fields to printable 16-character ASCII strings without buffer overruns.
 - **Nominal CPU Clock**: Removed the runtime CPU clock divider (`CPU` setting) so `millis()`, button debouncing, and EEPROM save timers always run at nominal speed.
-- **Zero-SRAM `PROGMEM` Tables**: Moved band tables and settings metadata to Flash (`FlashAccess.h`), freeing 228 bytes of SRAM (`1,092` B used out of `2,048` B) and fitting comfortably inside the Nano's `30,720`-byte Flash limit (`30,492` B with RDS).
+- **`PROGMEM` Tables**: Moved step, sub-band, battery and validation-limit tables to Flash (`FlashAccess.h`). The current build uses `1,078` B of SRAM (`970` B free) and `30,648` B of Flash (`72` B free) on the Nano with RDS.
+
+### Additional Hardening in This Source Tree
+
+- **Seek grid independent of manual step**: AM/FM scans start on the documented `10 kHz`/`100 kHz` grid instead of jumping by the selected manual step.
+- **Invalid tuning reads are rejected**: A failed or out-of-band frequency read can no longer replace valid state or be written to EEPROM.
+- **Factory reset needs a sustained hold**: Releasing the encoder button during the confirmation animation aborts the reset.
+- **Menu browsing no longer wears EEPROM**: Navigating or closing an unchanged menu writes nothing.
+- **RDS printable filter**: PS/RT/PI bytes outside printable ASCII are replaced by spaces.
+- **Display-off polling suspended**: RDS, S-meter and battery updates stop while the OLED is off.
+- **Fatal sanitizers and CI**: Host tests halt on UBSan errors and GitHub Actions builds both boards with and without RDS.
 
 ## Features
 - **Fully reworked minimalistic interface**: Clean, readable layout with a custom 7-segment frequency font (no stretched characters).
@@ -156,7 +168,7 @@ HEX_FILE="build/releases/ATS_EX_v1.18-r3_RDS.hex"
   -U "flash:w:$HEX_FILE:i"
 ```
 
-Wait for `avrdude` to report `30492 bytes of flash verified`. The receiver will reboot and show the `ATS_EX v1.18-r3` / `JVCARDOSO 2026` splash screen.
+Wait for `avrdude` to report `30648 bytes of flash verified`. The receiver will reboot and show the `ATS_EX v1.18-r3` / `JVCARDOSO 2026` splash screen.
 
 #### 4. Restore a previous Flash backup (Rollback)
 ```sh
@@ -316,7 +328,19 @@ Principais melhorias técnicas sobre a versão `v1.18` original:
 - **EEPROM Validada (`v4`/`v5`)**: Todos os dados lidos da EEPROM são validados na inicialização; caso haja valores corrompidos ou de uma versão antiga incompatível (`v1.18` original ou `r1`), o rádio restaura os padrões de fábrica automaticamente com segurança.
 - **Buffers RDS Protegidos (`USE_RDS=1` / `USE_RDS=0`)**: Sanitização completa das mensagens RDS (até 16 caracteres ASCII imprimíveis) sem risco de estouro de memória.
 - **Clock Nominal Estável**: Removida a divisão de clock da CPU para garantir que `millis()`, leitura de botões e temporizadores da EEPROM funcionem sempre com tempo exato.
-- **Tabelas em `PROGMEM` (Mais Memória Livre)**: Tabelas de bandas e configurações movidas para a memória Flash (`FlashAccess.h`), economizando 228 bytes de SRAM (`1.092` B usados de `2.048` B — `46,7%` livres) e cabendo com folga no limite de `30.720` bytes do Arduino Nano (`30.492` B com RDS).
+- **Tabelas em `PROGMEM`**: Tabelas de passos, subfaixas, bateria e limites de validação movidas para a memória Flash (`FlashAccess.h`). O build atual usa `1.078` B de SRAM (`970` B livres) e `30.648` B de Flash (`72` B livres) no Nano com RDS.
+
+### Endurecimento adicional nesta árvore de código
+
+- **Grade de busca independente do passo manual**: buscas AM/FM começam na grade documentada de `10 kHz`/`100 kHz`, sem pular pelo passo manual selecionado.
+- **Leituras de sintonia inválidas são rejeitadas**: uma leitura falha ou fora da banda não substitui mais estado válido nem é gravada na EEPROM.
+- **Reset de fábrica exige pressionar e segurar**: soltar o botão do encoder durante a animação cancela o reset.
+- **Navegar no menu não desgasta mais a EEPROM**: navegar ou fechar um menu sem mudanças não grava nada.
+- **Filtro RDS imprimível**: bytes PS/RT/PI fora do ASCII imprimível são substituídos por espaço.
+- **Polling suspenso com display desligado**: RDS, S-meter e bateria deixam de ser atualizados enquanto o OLED está desligado.
+- **Sanitizadores fatais e CI**: os testes host param em erros do UBSan e o GitHub Actions compila as duas placas com e sem RDS.
+
+> **Nota:** esta árvore contém correções posteriores ao asset r3 publicado. Os tamanhos acima correspondem ao build atual; os arquivos r3 publicados precisam ser regravados a partir desta árvore. O banner `v1.18-r3` foi mantido de propósito.
 
 ## Principais Funcionalidades
 - **Interface totalmente redesenhada**: Visual limpo, sem fontes esticadas, com fonte numérica de 7 segmentos própria.
@@ -422,7 +446,7 @@ HEX_FILE="build/releases/ATS_EX_v1.18-r3_RDS.hex"
   -U "flash:w:$HEX_FILE:i"
 ```
 
-Ao terminar, o `avrdude` exibirá `30492 bytes of flash verified` e o rádio reiniciará exibindo a tela `ATS_EX v1.18-r3` / `JVCARDOSO 2026`.
+Ao terminar, o `avrdude` exibirá `30648 bytes of flash verified` e o rádio reiniciará exibindo a tela `ATS_EX v1.18-r3` / `JVCARDOSO 2026`.
 
 #### 4. Restaurar o backup anterior (Rollback)
 Caso queira voltar para o firmware salvo no passo 2:
