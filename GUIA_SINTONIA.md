@@ -41,8 +41,8 @@ Ideal para testar o decodificador **RDS**, a busca automática (**Scan**) e a ba
      - **`99.50` MHz** — *Band FM Rio Preto*
      - **`102.10` MHz** — *Jovem Pan FM Rio Preto*
      - **`106.70` MHz** — *Educativa FM Rio Preto*
-  6. Aperte **`MODE`** (toque curto) para ligar o **RDS**: abaixo da frequência aparecerão `...` e, após alguns segundos sincronizando, o **nome da rádio / música**.
-  7. Aperte o **Botão do Encoder** para alternar entre os 3 textos do RDS (*Nome da Estação*, *Texto* e *Informação*).
+  6. Aperte **`MODE`** (toque curto) para abrir a **tela RDS em tela cheia**: aparecerão `...` e, após alguns segundos sincronizando, até **4 linhas de 16 caracteres** (64 no total). A frequência/status ficam ocultos enquanto essa tela está ativa; aperte `MODE` de novo para voltar.
+  7. Aperte o **Botão do Encoder** para alternar entre os 3 textos do RDS (*Nome da Estação*, *Texto* e *Informação*); cada campo ocupa de 1 a 4 linhas conforme o tamanho.
 
 ---
 
