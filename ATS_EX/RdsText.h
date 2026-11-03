@@ -9,7 +9,10 @@ inline void formatRdsLine(char* line, const char* text)
     uint8_t i = 0;
     if (text)
         while (i < 16 && *text)
-            line[i++] = *text++;
+        {
+            uint8_t c = uint8_t(*text++);
+            line[i++] = (c >= 0x20 && c <= 0x7E) ? char(c) : ' ';
+        }
     while (i < 16)
         line[i++] = ' ';
     if (missing)

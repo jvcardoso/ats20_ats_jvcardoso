@@ -699,6 +699,9 @@ void testRds()
     char text[] = "12345678901234567890";
     formatRdsLine(line + 1, text); assert(std::string(line + 1) == "1234567890123456");
     assert(std::string(text) == "12345678901234567890");
+    const char raw[] = {'A', 0x01, 'B', 0x7F, 'C', static_cast<char>(0x80), 'D', 0};
+    formatRdsLine(line + 1, raw);
+    assert(std::string(line + 1) == "A B C D         ");
 #if USE_RDS
     resetRuntime(); switchCommand(NULL);
     switchCommand(&g_cmdBand);
@@ -718,7 +721,7 @@ void testRds()
     g_si4735.received = false; g_currentFrequency = 8500; showRDS();
     assert(lastRdsLine == "...             ");
 #endif
-    std::cout << "PASS RDS: absent/empty/long text, bounds, borrowed buffers, frequency change\n";
+    std::cout << "PASS RDS: absent/empty/long text, bounds, printable filter, borrowed buffers, frequency change\n";
 }
 
 void testProductionFormatting()
