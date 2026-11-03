@@ -58,6 +58,8 @@ struct SI4735
     uint16_t seekStartFrequency = 0;
     uint16_t currentStep = 10;
     uint16_t finalSeekFrequency = 0;
+    bool failFrequencyRead = false;
+    uint16_t frequencyReadValue = 0;
     std::vector<uint16_t> frequencyRequests;
     std::vector<int> bfoRequests;
     int lastSidebandCutoff = -1;
@@ -83,6 +85,11 @@ struct SI4735
             hardwareSeeking = false;
             ++cancelCommands;
             if (finalSeekFrequency) frequency = finalSeekFrequency;
+        }
+        if (failFrequencyRead)
+        {
+            failFrequencyRead = false;
+            return frequencyReadValue;
         }
         return frequency;
     }
@@ -559,6 +566,55 @@ void testSeekStartGrid()
     std::cout << "PASS seek grid: seek spacing independent of manual step, wrap, held button, SSB direction\n";
 }
 
+void testInvalidFrequencyProtection()
+{
+    resetRuntime();
+    g_currentMode = FM; g_bandIndex = FM_BAND_TYPE;
+    g_currentFrequency = 8400; g_bandList[FM_BAND_TYPE].currentFreq = 8400;
+    g_settingsDirty = false;
+    showFrequencySeek(0);
+    assert(g_currentFrequency == 8400);
+    assert(g_bandList[FM_BAND_TYPE].currentFreq == 8400);
+    assert(!g_settingsDirty);
+
+    resetRuntime();
+    g_currentMode = FM; g_bandIndex = FM_BAND_TYPE;
+    g_currentFrequency = 8400; g_bandList[FM_BAND_TYPE].currentFreq = 8400;
+    g_si4735.frequency = 8400;
+    g_si4735.seekCallbackFrequency = 8450;
+    g_si4735.failFrequencyRead = true;
+    g_si4735.frequencyReadValue = 0;
+    doSeek();
+    assert(g_currentFrequency == 8450 && g_bandList[FM_BAND_TYPE].currentFreq == 8450);
+
+    resetRuntime();
+    g_currentMode = FM; g_bandIndex = FM_BAND_TYPE;
+    g_currentFrequency = 8400; g_bandList[FM_BAND_TYPE].currentFreq = 8400;
+    g_si4735.frequency = 8400;
+    g_si4735.seekCallbackFrequency = 0;
+    g_si4735.failFrequencyRead = true;
+    g_si4735.frequencyReadValue = 0;
+    doSeek();
+    assert(g_currentFrequency == 8410 && g_bandList[FM_BAND_TYPE].currentFreq == 8410);
+
+    resetRuntime(); ssb(15000); g_stepIndex = 11;
+    g_si4735.frequency = 7100;
+    g_si4735.failFrequencyRead = true;
+    g_si4735.frequencyReadValue = 0;
+    doFrequencyTuneSSB(1);
+    assert(g_currentFrequency == 7115 && g_currentBFO == 500);
+    assert(g_bandList[SW_BAND_TYPE].currentFreq == 7115);
+
+    resetRuntime(); EEPROM = TestStorage(); setup();
+    const TestStorage before = EEPROM;
+    g_bandList[FM_BAND_TYPE].currentFreq = 0;
+    g_settingsDirty = true;
+    saveAllReceiverInformation();
+    assert(EEPROM.bytes == before.bytes);
+    assert(!g_settingsDirty);
+    std::cout << "PASS invalid frequency: reads bounded, seek fallback, SSB fallback, save guard\n";
+}
+
 void testRds()
 {
     char line[19]; memset(line, 'X', sizeof(line));
@@ -723,7 +779,8 @@ void testSeekProtocol()
 int main()
 {
     testBatteryInitialSample(); testShortReleaseDebounce();
-    testStorage(); testControls(); testFrequencyBehavior(); testSeekStartGrid(); testRds();
+    testStorage(); testControls(); testFrequencyBehavior(); testSeekStartGrid();
+    testInvalidFrequencyProtection(); testRds();
     testProductionFormatting(); testContinuousSsbTuning(); testCommandTransitions(); testSeekProtocol();
     std::cout << "PASS all host regressions (USE_RDS=" << USE_RDS << ")\n";
 }

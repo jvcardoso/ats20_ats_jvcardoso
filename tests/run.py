@@ -8,7 +8,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = (ROOT / 'ATS_EX/ATS_EX.ino').read_text()
-FUNCTIONS = '''setup isSSB encoderButtonPressed getSteps getLastStep amSeekSpacing
+FUNCTIONS = '''setup isSSB encoderButtonPressed getSteps getLastStep amSeekSpacing frequencyInBand bandFrequenciesValid
 ssbFrequencyKHzFloor ssbFrequencyKHzCeil ssbRoundedFrequencyKHz
 simpleEvent volumeEvent bandEvent
 rotaryEncoder updateSSBCutoffFilter saveAllReceiverInformation readAllReceiverInformation

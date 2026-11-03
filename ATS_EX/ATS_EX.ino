@@ -90,6 +90,21 @@ uint16_t amSeekSpacing()
     return step > 10 ? 10 : step;
 }
 
+bool frequencyInBand(uint16_t frequency)
+{
+    return frequency >= g_bandList[g_bandIndex].minimumFreq
+        && frequency <= g_bandList[g_bandIndex].maximumFreq;
+}
+
+bool bandFrequenciesValid()
+{
+    for (uint8_t i = 0; i <= g_lastBand; i++)
+        if (g_bandList[i].currentFreq < g_bandList[i].minimumFreq
+            || g_bandList[i].currentFreq > g_bandList[i].maximumFreq)
+            return false;
+    return true;
+}
+
 // --------------------------
 // ------- Main logic -------
 // --------------------------
@@ -287,6 +302,11 @@ void saveAllReceiverInformation()
     }
     for (uint8_t i = 0; i < SettingsIndex::SETTINGS_MAX; i++)
         state.settings[i] = g_Settings[i].param;
+    if (!bandFrequenciesValid())
+    {
+        g_settingsDirty = false;
+        return;
+    }
     storeReceiverState(EEPROM, state);
     g_settingsDirty = false;
 }
@@ -412,6 +432,8 @@ void showFrequency(bool cleanDisplay = false)
 //This function is called by station seek logic
 void showFrequencySeek(uint16_t freq)
 {
+    if (!frequencyInBand(freq))
+        return;
     g_currentFrequency = freq;
     g_bandList[g_bandIndex].currentFreq = g_currentFrequency;
     resetEepromDelay();
@@ -1515,7 +1537,9 @@ void doFrequencyTuneSSB(int8_t direction)
     {
         g_si4735.setFrequency(g_currentFrequency);
         agcSetFunc(); //Re-apply to remove noize
-        g_currentFrequency = g_si4735.getFrequency();
+        uint16_t tuned = g_si4735.getFrequency();
+        if (frequencyInBand(tuned))
+            g_currentFrequency = tuned;
     }
 
     g_bandList[g_bandIndex].currentFreq = g_currentFrequency;
