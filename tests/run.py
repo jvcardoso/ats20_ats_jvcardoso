@@ -45,11 +45,12 @@ if __name__ == '__main__':
             (folder / 'FirmwareFunctions.inc').write_text('\n'.join(prototypes + definitions))
             executable = folder / f'firmware-test-rds{rds}'
             command = [compiler, '-std=gnu++11', '-Wall', '-Wextra', '-Werror',
-                       '-fsanitize=address,undefined', '-fno-omit-frame-pointer',
+                       '-fsanitize=address,undefined', '-fno-sanitize-recover=all',
+                       '-g', '-fno-omit-frame-pointer',
                        f'-DUSE_RDS={rds}', '-I' + str(ROOT / 'tests/support'),
                        '-I' + str(ROOT / 'ATS_EX'), '-I' + str(folder),
                        str(ROOT / 'tests/firmware_test.cpp'),
                        str(ROOT / 'ATS_EX/SimpleButton.cpp'), str(ROOT / 'ATS_EX/Rotary.cpp'),
                        '-o', str(executable)]
-            subprocess.run(command, check=True)
-            subprocess.run([str(executable)], check=True)
+            subprocess.run(command, check=True, timeout=120)
+            subprocess.run([str(executable)], check=True, timeout=60)

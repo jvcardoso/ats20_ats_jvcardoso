@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  host-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run host regression tests
+        run: python3 tests/run.py
+
+  avr-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: arduino/setup-arduino-cli@v2
+        with:
+          version: '1.5.1'
+      - name: Install pinned AVR core and libraries
+        run: |
+          arduino-cli core update-index
+          arduino-cli core install arduino:avr@1.8.8
+          arduino-cli lib install "PU2CLR SI4735@2.1.8"
+          arduino-cli lib install "Tiny4kOLED@2.3.0"
+          arduino-cli lib install "TinyOLED-Fonts@1.2.0"
+      - name: Build Nano and Uno with and without RDS
+        run: python3 scripts/build.py --cli arduino-cli

@@ -14,13 +14,21 @@ parser.add_argument('--profile', choices=['nano', 'uno', 'all'], default='all')
 parser.add_argument('--rds', choices=['0', '1', 'all'], default='all')
 parser.add_argument('--output', type=Path, default=ROOT / 'build')
 
+ARTIFACTS = (
+    'ATS_EX.ino.hex',
+    'ATS_EX.ino.eep',
+    'ATS_EX.ino.elf',
+    'ATS_EX.ino.with_bootloader.hex',
+    'ATS_EX.ino.with_bootloader.bin',
+)
+
 def main():
     args = parser.parse_args()
     cli = args.cli or shutil.which('arduino-cli')
     bundled = Path('/Applications/Arduino IDE.app/Contents/Resources/app/lib/backend/resources/arduino-cli')
     if not cli and bundled.is_file():
         cli = str(bundled)
-    if not cli:
+    if not cli or (not Path(cli).is_file() and not shutil.which(cli)):
         parser.error('Install Arduino CLI or pass its path with --cli.')
     base = [cli, '--no-color']
     if args.config_file:
@@ -32,12 +40,23 @@ def main():
         for rds in variants:
             output = args.output.resolve() / f'{profile}-rds{rds}'
             output.mkdir(parents=True, exist_ok=True)
+            for name in ARTIFACTS:
+                stale = output / name
+                if stale.exists():
+                    stale.unlink()
             command = base + ['compile', '--profile', profile, '--warnings', 'all',
                               '--build-property', f'compiler.cpp.extra_flags=-DUSE_RDS={rds}',
                               '--build-path', str(output / 'objects'),
                               '--output-dir', str(output), str(ROOT / 'ATS_EX')]
             print(f'Compiling {profile}, USE_RDS={rds}...', flush=True)
-            result = subprocess.run(command, capture_output=True, text=True)
+            try:
+                result = subprocess.run(command, capture_output=True, text=True, timeout=900)
+            except (subprocess.TimeoutExpired, OSError) as exc:
+                message = f'Compile failed to run: {exc}'
+                (output / 'compile.log').write_text(message)
+                print(message, file=sys.stderr)
+                failed = True
+                continue
             log = '\n'.join(command) + f'\n\nExit code: {result.returncode}\n\n' + result.stdout + result.stderr
             (output / 'compile.log').write_text(log)
             for line in result.stdout.splitlines():
@@ -45,6 +64,9 @@ def main():
                     print(line, flush=True)
             if result.returncode:
                 print(result.stderr[-4000:], file=sys.stderr)
+                failed = True
+            elif not (output / 'ATS_EX.ino.hex').is_file():
+                print('Compile succeeded but produced no HEX file.', file=sys.stderr)
                 failed = True
             print(f'Log: {output / "compile.log"}', flush=True)
     return int(failed)
