@@ -14,6 +14,7 @@
 
 uint8_t DDRB, DDRC, DDRD, PORTB, PORTC, PORTD, PINB = 255, PINC = 255, PIND = 255, CLKPR;
 uint32_t testMillis;
+int testDelayCount;
 int testAnalogSample = 600;
 void (*testDelayHook)(uint32_t) = nullptr;
 struct DCfont {};
@@ -307,7 +308,19 @@ void testResetConfirmation()
     testDelayHook = nullptr;
     assert(g_volume == 45);
     assert(g_currentMode == AM);
-    std::cout << "PASS EEPROM reset: releasing the button during confirmation preserves settings\n";
+
+    resetRuntime();
+    pin(ENCODER_BUTTON, false);
+    testDelayCount = 0;
+    testDelayHook = [](uint32_t) {
+        if (++testDelayCount == 16)
+            PINC |= 1 << (ENCODER_BUTTON - 14);
+    };
+    setup();
+    testDelayHook = nullptr;
+    assert(g_volume == 45);
+    assert(g_currentMode == AM);
+    std::cout << "PASS EEPROM reset: early and final-tick release preserve settings\n";
 }
 
 void testMenuWear()

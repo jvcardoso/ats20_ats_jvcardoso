@@ -135,14 +135,14 @@ void setup()
         oled.setCursor(0, 2);
         for (uint8_t i = 0; i < 16; i++)
         {
+            oled.print("-"); //Just fancy animation
+            delay(60);
             if (!encoderButtonPressed())
             {
                 resetSettings = false;
                 oled.clear();
                 break;
             }
-            oled.print("-"); //Just fancy animation
-            delay(60);
         }
     }
     if (!resetSettings)

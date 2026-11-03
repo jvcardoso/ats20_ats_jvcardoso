@@ -28,11 +28,9 @@ def main():
     bundled = Path('/Applications/Arduino IDE.app/Contents/Resources/app/lib/backend/resources/arduino-cli')
     if not cli and bundled.is_file():
         cli = str(bundled)
+    cli_error = None
     if not cli or (not Path(cli).is_file() and not shutil.which(cli)):
-        parser.error('Install Arduino CLI or pass its path with --cli.')
-    base = [cli, '--no-color']
-    if args.config_file:
-        base += ['--config-file', str(args.config_file.resolve())]
+        cli_error = 'Install Arduino CLI or pass a valid path with --cli.'
     profiles = ['nano', 'uno'] if args.profile == 'all' else [args.profile]
     variants = ['1', '0'] if args.rds == 'all' else [args.rds]
     failed = False
@@ -44,6 +42,14 @@ def main():
                 stale = output / name
                 if stale.exists():
                     stale.unlink()
+            if cli_error:
+                (output / 'compile.log').write_text(cli_error)
+                print(f'{output}: {cli_error}', file=sys.stderr)
+                failed = True
+                continue
+            base = [cli, '--no-color']
+            if args.config_file:
+                base += ['--config-file', str(args.config_file.resolve())]
             command = base + ['compile', '--profile', profile, '--warnings', 'all',
                               '--build-property', f'compiler.cpp.extra_flags=-DUSE_RDS={rds}',
                               '--build-path', str(output / 'objects'),
