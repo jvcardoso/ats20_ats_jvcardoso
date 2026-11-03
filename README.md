@@ -199,7 +199,7 @@ python3 tests/run.py
 
 ## User Manual
 
-> **EEPROM Reset:** Upgrading from `v1.18` or `r1` resets EEPROM to safe defaults automatically. To manually reset all settings to factory defaults at any time, **press and hold the Encoder Button while turning the receiver ON** until **`EEPROM RESET`** appears on screen.
+> **EEPROM Reset:** Upgrading from `v1.18` or `r1` resets EEPROM to safe defaults automatically. To manually reset all settings to factory defaults at any time, **press and hold the Encoder Button while turning the receiver ON** and keep holding until the **`EEPROM RESET`** progress bar completes (about 1 second). Releasing the button during the bar cancels the reset.
 
 ### Button Functionality
 - **`BAND+`**:
@@ -233,7 +233,7 @@ python3 tests/run.py
   1. **In AM/FM (when `Sca` is `On`)**: Start **station scan** in the last tuning direction. Rotate the encoder or press the encoder button to **cancel scanning**.
   2. **In SSB/CW (or when `Sca` is `Off`)**: Quick shortcut to adjust the **tuning step**.
   3. **In FM with RDS active**: Cycle between **Station Name**, **Station Info**, and **Program Info**.
-  4. **Held during power-on**: Perform an **EEPROM Reset**.
+  4. **Held during power-on**: Perform an **EEPROM Reset**; keep holding until the progress bar completes.
 
 ### Settings Menu
 
@@ -477,7 +477,7 @@ python3 tests/run.py
 
 ## Manual do Usuário (PT-BR)
 
-> **Reset de EEPROM:** Ao atualizar a partir do `v1.18` original, o rádio redefine a EEPROM automaticamente para os padrões seguros. Para fazer um **Reset de Fábrica manual** a qualquer momento, **mantenha o Botão do Encoder pressionado enquanto liga o rádio na chave traseira** até aparecer **`EEPROM RESET`** na tela.
+> **Reset de EEPROM:** Ao atualizar a partir do `v1.18` original, o rádio redefine a EEPROM automaticamente para os padrões seguros. Para fazer um **Reset de Fábrica manual** a qualquer momento, **mantenha o Botão do Encoder pressionado enquanto liga o rádio na chave traseira** e continue segurando até a barra de progresso de **`EEPROM RESET`** terminar (cerca de 1 segundo). Soltar o botão durante a barra cancela o reset.
 
 ### Funções dos Botões
 - **`BAND+`**:
@@ -511,7 +511,7 @@ python3 tests/run.py
   1. **Em AM/FM (com `Sca` = `On`)**: Inicia a **busca automática de estações (`Scan`)** na última direção utilizada. Gire o encoder ou aperte o botão novamente para **parar a busca**.
   2. **Em SSB/CW (ou com `Sca` = `Off`)**: Atalho rápido para trocar o **passo de sintonia (`Step`)**.
   3. **No FM com RDS ativo**: Alterna entre os 3 modos de texto RDS (**Nome da Estação**, **Informação da Estação** e **Programação**).
-  4. **Segurado ao ligar o rádio**: Executa o **Reset da EEPROM**.
+  4. **Segurado ao ligar o rádio**: Executa o **Reset da EEPROM**; continue segurando até a barra de progresso terminar.
 
 ### Menu de Configurações (`Settings`)
 
