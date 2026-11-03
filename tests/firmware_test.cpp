@@ -59,6 +59,7 @@ struct SI4735
     bool hardwareSeeking = false;
     int cancelCommands = 0;
     int seekCalls = 0;
+    int rdsStatusCalls = 0;
     uint16_t seekStartFrequency = 0;
     uint16_t currentStep = 10;
     uint16_t finalSeekFrequency = 0;
@@ -135,7 +136,7 @@ struct SI4735
     void setSeekAmSpacing(uint16_t value) { lastSeekAmSpacing = value; }
     void setFrequencyStep(uint16_t value) { currentStep = value; }
     RADIO_NOOP(setAutomaticGainControl)
-    RADIO_NOOP(getRdsStatus)
+    void getRdsStatus() { ++rdsStatusCalls; }
 #undef RADIO_NOOP
     void seekStationProgress(void (*show)(uint16_t), bool (*stop)(), uint8_t)
     {
@@ -668,6 +669,27 @@ void testInvalidFrequencyProtection()
     std::cout << "PASS invalid frequency: reads bounded, seek fallback, SSB fallback, save guard\n";
 }
 
+void testDisplayOffPolling()
+{
+#if USE_RDS
+    resetRuntime();
+    g_currentMode = FM; g_bandIndex = FM_BAND_TYPE;
+    g_currentFrequency = 8500; g_bandList[FM_BAND_TYPE].currentFreq = 8500;
+    g_displayRDS = true; g_displayOn = false;
+    testMillis = 5000;
+    int calls = g_si4735.rdsStatusCalls;
+    loop();
+    assert(g_si4735.rdsStatusCalls == calls);
+
+    g_displayOn = true;
+    loop();
+    assert(g_si4735.rdsStatusCalls > calls);
+    std::cout << "PASS display off: RDS polling is suspended until the OLED returns\n";
+#else
+    std::cout << "PASS display off: RDS disabled, no polling path compiled\n";
+#endif
+}
+
 void testRds()
 {
     char line[19]; memset(line, 'X', sizeof(line));
@@ -834,7 +856,7 @@ int main()
     testBatteryInitialSample(); testShortReleaseDebounce();
     testResetConfirmation(); testMenuWear(); testStorage(); testControls();
     testFrequencyBehavior(); testSeekStartGrid();
-    testInvalidFrequencyProtection(); testRds();
+    testInvalidFrequencyProtection(); testDisplayOffPolling(); testRds();
     testProductionFormatting(); testContinuousSsbTuning(); testCommandTransitions(); testSeekProtocol();
     std::cout << "PASS all host regressions (USE_RDS=" << USE_RDS << ")\n";
 }

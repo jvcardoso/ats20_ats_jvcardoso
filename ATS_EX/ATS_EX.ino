@@ -1750,7 +1750,7 @@ void loop()
         }
     }
 
-    if (millis() - g_lastFreqChange >= 1000)
+    if (g_displayOn && millis() - g_lastFreqChange >= 1000)
     {
 #if USE_RDS
         showRDS();
