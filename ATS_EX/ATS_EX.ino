@@ -31,6 +31,7 @@ static_assert(STATE_SETTINGS_COUNT == SettingsIndex::SETTINGS_MAX, "Settings lay
 
 void showStatus(bool cleanFreq = false);
 void applyBandConfiguration(bool extraSSBReset = false);
+void resetLowerLine();
 
 bool isSSB()
 {
@@ -184,6 +185,10 @@ void setup()
 
 uint8_t volumeEvent(uint8_t event, uint8_t pin)
 {
+#if USE_RDS
+    if (g_displayRDS)
+        resetLowerLine();
+#endif
     if (g_muteVolume)
     {
         if (!BUTTONEVENT_ISDONE(event))
@@ -678,6 +683,9 @@ void switchSettings()
     oled.clear();
     if (g_settingsActive)
     {
+#if USE_RDS
+        g_displayRDS = false;
+#endif
         g_SettingsPage = 1;
         showSettingsTitle();
         g_SettingSelected = 0;
@@ -817,10 +825,18 @@ void showCharge(bool forceShow)
 }
 
 #if USE_RDS
+void exitRDS()
+{
+    if (!g_displayRDS)
+        return;
+    g_displayRDS = false;
+    oled.clear();
+    showStatus();
+}
+
 void showRDS()
 {
     static uint16_t lastFrequency = 0;
-    static uint32_t lastPoll = 0;
     if (g_currentMode != FM || !g_displayRDS || g_settingsActive)
     {
         lastFrequency = 0;
@@ -835,12 +851,10 @@ void showRDS()
         g_rdsActiveInfo = RDSActiveInfo::StationName;
         lastFrequency = g_currentFrequency;
     }
-    if (!changed && !g_rdsSwitchPressed && millis() - lastPoll < 300)
-        return;
-    if (g_rdsSwitchPressed)
+    bool switched = g_rdsSwitchPressed;
+    if (switched)
         g_rdsActiveInfo = (g_rdsActiveInfo + 1) % 3;
     g_rdsSwitchPressed = false;
-    lastPoll = millis();
 
     g_si4735.getRdsStatus();
     if (g_si4735.getRdsReceived() && g_si4735.getRdsSync() && g_si4735.getNumRdsFifoUsed() > 1)
@@ -851,9 +865,14 @@ void showRDS()
             if (cells[i])
                 g_RDSCells[i] = cells[i];
     }
-    char line[17];
-    formatRdsLine(line, g_RDSCells[g_rdsActiveInfo]);
-    oledPrint(line, 0, 6, DEFAULT_FONT);
+
+    const char* text = g_RDSCells[g_rdsActiveInfo];
+    uint8_t maxLen = g_rdsActiveInfo == RDSActiveInfo::ProgramInfo ? 64
+        : g_rdsActiveInfo == RDSActiveInfo::StationInfo ? 32 : 8;
+
+    char line[65];
+    formatRdsText(line, text, maxLen);
+    oledPrint(line, 0, 0, DEFAULT_FONT);
 }
 #endif
 
@@ -1016,10 +1035,7 @@ void bandSwitch(bool up)
 
 #if USE_RDS
         if (g_displayRDS)
-        {
-            g_displayRDS = false;
-            oledPrint(_literal_EmptyLine, 0, 6, DEFAULT_FONT);
-        }
+            exitRDS();
 #endif
 
         g_currentBFO = 0;
@@ -1371,17 +1387,16 @@ void doCWSwitch(int8_t v)
 void doRDS()
 {
     switchCommand(NULL);
-    g_displayRDS = !g_displayRDS;
-
     if (g_displayRDS)
     {
-        g_sMeterOn = false;
-        oledPrint(_literal_EmptyLine, 0, 6, DEFAULT_FONT);
-        g_si4735.getRdsStatus();
-        showRDS();
+        exitRDS();
+        return;
     }
-    else
-        updateLowerDisplayLine();
+
+    g_displayRDS = true;
+    g_sMeterOn = false;
+    oled.clear();
+    showRDS();
 }
 #endif
 
@@ -1477,11 +1492,10 @@ void doFrequencyTune(int8_t direction)
     resetEepromDelay();
     if (g_currentMode == FM)
     {
-        g_currentFrequency += flashRead8(&g_tabStepFM[g_FMStepIndex]) * direction; //g_si4735.getFrequency() is too slow
 #if USE_RDS
-        if (g_displayRDS)
-            oledPrint(_literal_EmptyLine, 0, 6, DEFAULT_FONT);
+        exitRDS();
 #endif
+        g_currentFrequency += flashRead8(&g_tabStepFM[g_FMStepIndex]) * direction; //g_si4735.getFrequency() is too slow
     }
     else
         g_currentFrequency += flashRead16(&g_tabStep[g_stepIndex]) * direction;
@@ -1502,10 +1516,16 @@ void doFrequencyTune(int8_t direction)
 
 void resetLowerLine()
 {
-    if (g_sMeterOn || g_displayRDS)
+#if USE_RDS
+    if (g_displayRDS)
+    {
+        exitRDS();
+        return;
+    }
+#endif
+    if (g_sMeterOn)
     {
         g_sMeterOn = false;
-        g_displayRDS = false;
         updateLowerDisplayLine();
     }
 }
@@ -1555,7 +1575,10 @@ void handleButtons()
     if (BUTTONEVENT_SHORTPRESS == btn_Bandwidth.checkEvent(simpleEvent))
     {
         if (!g_settingsActive && g_currentMode != CW)
+        {
+            resetLowerLine();
             switchCommand(&g_cmdBw);
+        }
     }
     if (BUTTONEVENT_SHORTPRESS == btn_BandUp.checkEvent(bandEvent))
     {
@@ -1678,7 +1701,9 @@ void handleButtons()
             g_sMeterOn = !g_sMeterOn;
             if (g_sMeterOn)
             {
-                g_displayRDS = false;
+#if USE_RDS
+                exitRDS();
+#endif
                 showSMeter();
             }
             else

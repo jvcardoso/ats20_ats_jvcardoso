@@ -726,6 +726,12 @@ void testRds()
     const char raw[] = {'A', 0x01, 'B', 0x7F, 'C', static_cast<char>(0x80), 'D', 0};
     formatRdsLine(line + 1, raw);
     assert(std::string(line + 1) == "A B C D         ");
+    char page[65];
+    const char incomplete[] = {'A', 'B', 0, 'C', 0x0D, 'D', 0};
+    formatRdsText(page, incomplete, 7);
+    assert(page[0] == 'A' && page[1] == 'B' && page[2] == ' ');
+    assert(page[3] == 'C' && page[4] == ' ' && page[5] == ' ');
+    assert(std::string(page).size() == 64);
 #if USE_RDS
     resetRuntime(); switchCommand(NULL);
     switchCommand(&g_cmdBand);
@@ -735,17 +741,82 @@ void testRds()
     g_displayRDS = false;
     g_currentMode = AM; showRDS();
     g_currentMode = FM; g_displayRDS = true; g_currentFrequency = 8400;
-    showRDS(); assert(lastRdsLine == "...             ");
-    g_si4735.received = true; testMillis += 301; showRDS();
-    assert(lastRdsLine == "STATION         ");
+    displayTexts.clear(); showRDS();
+    assert(lastRdsLine.size() == 64);
+    assert(lastRdsLine.substr(0, 3) == "...");
+
+    auto page64 = [](const std::string& value, size_t maxLen) {
+        std::string page(64, ' ');
+        for (size_t i = 0; i < maxLen && i < value.size(); i++)
+            page[i] = value[i];
+        return page;
+    };
+
+    g_si4735.received = true; testMillis += 301;
+    displayTexts.clear(); showRDS();
+    assert(displayTexts.size() == 1);
+    assert(lastRdsLine == page64("STATION", 8));
+
     const std::string original = g_si4735.information;
-    g_rdsSwitchPressed = true; showRDS();
-    assert(lastRdsLine == original.substr(0, 16));
+    displayTexts.clear(); g_rdsSwitchPressed = true; showRDS();
+    assert(displayTexts.size() == 1);
+    assert(lastRdsLine == page64(original, 32));
     assert(original == g_si4735.information);
-    g_si4735.received = false; g_currentFrequency = 8500; showRDS();
-    assert(lastRdsLine == "...             ");
+
+    char longProgram[65];
+    for (uint8_t i = 0; i < 64; i++)
+        longProgram[i] = char('A' + (i % 26));
+    longProgram[64] = '\0';
+    strcpy(g_si4735.program, longProgram);
+    const std::string program = g_si4735.program;
+    displayTexts.clear(); g_rdsSwitchPressed = true; showRDS();
+    assert(displayTexts.size() == 1);
+    assert(lastRdsLine == program);
+
+    g_si4735.received = false; g_currentFrequency = 8500;
+    displayTexts.clear(); showRDS();
+    assert(lastRdsLine.size() == 64);
+    assert(lastRdsLine.substr(0, 3) == "...");
 #endif
     std::cout << "PASS RDS: absent/empty/long text, bounds, printable filter, borrowed buffers, frequency change\n";
+}
+
+void testRdsExit()
+{
+#if USE_RDS
+    resetRuntime();
+    g_currentMode = FM; g_bandIndex = FM_BAND_TYPE;
+    g_currentFrequency = 8400;
+    g_bandList[FM_BAND_TYPE].currentFreq = 8400;
+    g_displayRDS = true;
+    resetLowerLine();
+    assert(!g_displayRDS);
+
+    g_displayRDS = true;
+    volumeEvent(BUTTONEVENT_SHORTPRESS, VOLUME_BUTTON);
+    assert(!g_displayRDS);
+
+    g_displayRDS = true;
+    shortPress(BANDWIDTH_BUTTON);
+    assert(!g_displayRDS && g_cmdBw);
+
+    g_displayRDS = true;
+    doFrequencyTune(1);
+    assert(!g_displayRDS);
+
+    g_displayRDS = true;
+    doRDS();
+    assert(!g_displayRDS);
+
+    resetRuntime();
+    g_currentMode = FM; g_displayRDS = true;
+    g_settingsActive = true;
+    switchSettings();
+    assert(!g_displayRDS);
+    std::cout << "PASS RDS exit: commands, tuning, mute, settings and MODE restore the main screen\n";
+#else
+    std::cout << "PASS RDS exit: disabled build\n";
+#endif
 }
 
 void testProductionFormatting()
@@ -883,7 +954,7 @@ int main()
     testBatteryInitialSample(); testShortReleaseDebounce();
     testResetConfirmation(); testMenuWear(); testStorage(); testControls();
     testFrequencyBehavior(); testSeekStartGrid();
-    testInvalidFrequencyProtection(); testDisplayOffPolling(); testRds();
+    testInvalidFrequencyProtection(); testDisplayOffPolling(); testRds(); testRdsExit();
     testProductionFormatting(); testContinuousSsbTuning(); testCommandTransitions(); testSeekProtocol();
     std::cout << "PASS all host regressions (USE_RDS=" << USE_RDS << ")\n";
 }
