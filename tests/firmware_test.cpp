@@ -54,6 +54,9 @@ struct SI4735
     int lastSeekAmSpacing = 0;
     bool hardwareSeeking = false;
     int cancelCommands = 0;
+    int seekCalls = 0;
+    uint16_t seekStartFrequency = 0;
+    uint16_t currentStep = 10;
     uint16_t finalSeekFrequency = 0;
     std::vector<uint16_t> frequencyRequests;
     std::vector<int> bfoRequests;
@@ -83,17 +86,17 @@ struct SI4735
         }
         return frequency;
     }
-    void frequencyUp() { ++frequency; }
-    void frequencyDown() { --frequency; }
+    void frequencyUp() { frequency += currentStep; }
+    void frequencyDown() { frequency -= currentStep; }
     void setSSBBfo(int value) { bfo = value; bfoRequests.push_back(value); }
     void setSSBSidebandCutoffFilter(uint8_t value) { lastSidebandCutoff = value; }
     void setSeekFmSpacing(uint16_t value) { lastSeekFmSpacing = value; }
     template<class... Args> void setSSB(uint16_t low, uint16_t high, uint16_t value, Args...)
     { frequency = std::max(low, std::min(high, value)); }
-    template<class... Args> void setAM(uint16_t low, uint16_t high, uint16_t value, Args...)
-    { frequency = std::max(low, std::min(high, value)); }
-    template<class... Args> void setFM(uint16_t low, uint16_t high, uint16_t value, Args...)
-    { frequency = std::max(low, std::min(high, value)); }
+    void setAM(uint16_t low, uint16_t high, uint16_t value, uint16_t step)
+    { currentStep = step; frequency = std::max(low, std::min(high, value)); }
+    void setFM(uint16_t low, uint16_t high, uint16_t value, uint16_t step)
+    { currentStep = step; frequency = std::max(low, std::min(high, value)); }
     template<class... Args> void setRdsConfig(Args...) { ++rdsConfigCalls; }
     bool getRdsReceived() { return received; }
     bool getRdsSync() { return received; }
@@ -119,12 +122,14 @@ struct SI4735
     RADIO_NOOP(setAvcAmMaxGain)
     RADIO_NOOP(setSeekAmLimits)
     void setSeekAmSpacing(uint16_t value) { lastSeekAmSpacing = value; }
-    RADIO_NOOP(setFrequencyStep)
+    void setFrequencyStep(uint16_t value) { currentStep = value; }
     RADIO_NOOP(setAutomaticGainControl)
     RADIO_NOOP(getRdsStatus)
 #undef RADIO_NOOP
     void seekStationProgress(void (*show)(uint16_t), bool (*stop)(), uint8_t)
     {
+        ++seekCalls;
+        seekStartFrequency = frequency;
         hardwareSeeking = true;
         frequency = seekCallbackFrequency;
         if (show)
@@ -494,6 +499,66 @@ void testFrequencyBehavior()
     std::cout << "PASS frequency: seek stop, FM grid/callback, SSB edges/subbands/BFO, CW and AM transitions\n";
 }
 
+void testSeekStartGrid()
+{
+    resetRuntime();
+    g_currentMode = FM; g_bandIndex = FM_BAND_TYPE;
+    g_currentFrequency = 8400; g_bandList[FM_BAND_TYPE].currentFreq = 8400;
+    g_FMStepIndex = 2; g_bandList[FM_BAND_TYPE].currentStepIdx = 2;
+    g_si4735.frequency = 8400; g_si4735.setFrequencyStep(100); // manual 1 MHz
+    g_si4735.seekCallbackFrequency = 8450;
+    doSeek();
+    assert(g_si4735.seekStartFrequency == 8410);
+    assert(g_currentFrequency == 8450 && g_bandList[FM_BAND_TYPE].currentFreq == 8450);
+
+    g_seekDirection = 1;
+    g_currentFrequency = 10800; g_bandList[FM_BAND_TYPE].currentFreq = 10800;
+    g_si4735.frequency = 10800; g_si4735.seekCallbackFrequency = 6450;
+    doSeek();
+    assert(g_si4735.seekStartFrequency == 6400);
+
+    g_seekDirection = 0;
+    g_currentFrequency = 6400; g_bandList[FM_BAND_TYPE].currentFreq = 6400;
+    g_si4735.frequency = 6400; g_si4735.seekCallbackFrequency = 10750;
+    doSeek();
+    assert(g_si4735.seekStartFrequency == 10800);
+
+    resetRuntime();
+    g_currentMode = AM; g_bandIndex = SW_BAND_TYPE; g_seekDirection = 1;
+    g_currentFrequency = 1710; g_bandList[SW_BAND_TYPE].currentFreq = 1710;
+    g_stepIndex = 6; g_bandList[SW_BAND_TYPE].currentStepIdx = 6;
+    g_si4735.frequency = 1710; g_si4735.setFrequencyStep(1000); // manual 1 MHz
+    g_si4735.seekCallbackFrequency = 1750;
+    doSeek();
+    assert(g_si4735.seekStartFrequency == 1720);
+
+    resetRuntime();
+    g_currentMode = FM; g_bandIndex = FM_BAND_TYPE; g_currentFrequency = 8400;
+    g_bandList[FM_BAND_TYPE].currentFreq = 8400; g_si4735.frequency = 8400;
+    int calls = g_si4735.seekCalls;
+    pin(ENCODER_BUTTON, false);
+    doSeek();
+    assert(g_si4735.seekCalls == calls && !g_seekInProgress);
+    pin(ENCODER_BUTTON, true);
+
+    resetRuntime();
+    g_currentMode = FM; g_bandIndex = FM_BAND_TYPE; g_currentFrequency = 8400;
+    g_bandList[FM_BAND_TYPE].currentFreq = 8400; g_si4735.frequency = 8400;
+    g_Settings[SettingsIndex::ScanSwitch].param = 1;
+    pin(ENCODER_BUTTON, false);
+    for (int i = 0; i < 25; i++) { testMillis += 16; handleButtons(); }
+    assert(g_si4735.seekCalls == 0);
+    pin(ENCODER_BUTTON, true);
+    testMillis += 16; handleButtons();
+    testMillis += 80; handleButtons();
+    assert(g_si4735.seekCalls == 0);
+
+    resetRuntime(); ssb(0); g_seekDirection = 0;
+    doFrequencyTuneSSB(1);
+    assert(g_seekDirection == 1);
+    std::cout << "PASS seek grid: seek spacing independent of manual step, wrap, held button, SSB direction\n";
+}
+
 void testRds()
 {
     char line[19]; memset(line, 'X', sizeof(line));
@@ -658,7 +723,7 @@ void testSeekProtocol()
 int main()
 {
     testBatteryInitialSample(); testShortReleaseDebounce();
-    testStorage(); testControls(); testFrequencyBehavior(); testRds();
+    testStorage(); testControls(); testFrequencyBehavior(); testSeekStartGrid(); testRds();
     testProductionFormatting(); testContinuousSsbTuning(); testCommandTransitions(); testSeekProtocol();
     std::cout << "PASS all host regressions (USE_RDS=" << USE_RDS << ")\n";
 }

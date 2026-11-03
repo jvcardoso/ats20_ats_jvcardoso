@@ -37,6 +37,11 @@ bool isSSB()
     return g_currentMode > AM && g_currentMode < FM;
 }
 
+bool encoderButtonPressed()
+{
+    return !(PINC & (1 << (ENCODER_BUTTON - 14)));
+}
+
 int getSteps()
 {
     if (isSSB())
@@ -105,7 +110,7 @@ void setup()
     oled.on();
     oled.setFont(DEFAULT_FONT);
 
-    bool resetSettings = !(PINC & (1 << (ENCODER_BUTTON - 14)));
+    bool resetSettings = encoderButtonPressed();
 
     //Don't use digitalRead()
     //Registers save us more space
@@ -415,25 +420,40 @@ void showFrequencySeek(uint16_t freq)
 
 bool checkStopSeeking()
 {
-    return g_seekStop || !(PINC & (1 << (ENCODER_BUTTON - 14)));
+    return g_seekStop || encoderButtonPressed();
 }
 
 void doSeek()
 {
+    if (encoderButtonPressed())
+        return;
+
+    uint16_t low = g_bandList[g_bandIndex].minimumFreq;
+    uint16_t high = g_bandList[g_bandIndex].maximumFreq;
+    uint16_t start = g_currentFrequency;
+    if (start < low)
+        start = low;
+    else if (start > high)
+        start = high;
+
+    // Advance by the seek grid, never by the manual tuning step.
+    uint16_t spacing = g_currentMode == FM ? FM_SEEK_SPACING : amSeekSpacing();
+    if (g_seekDirection)
+        start = start > high - spacing ? low : start + spacing;
+    else
+        start = start < low + spacing ? high : start - spacing;
+
     ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
     {
         g_seekStop = false;
         g_seekInProgress = true;
+        g_encoderCount = 0;
     }
-    if (g_seekDirection)
-        g_si4735.frequencyUp();
-    else
-        g_si4735.frequencyDown();
+    g_processFreqChange = false;
 
-#if USE_RDS
-    if (g_displayRDS)
-        oledPrint(_literal_EmptyLine, 0, 6, DEFAULT_FONT);
-#endif
+    g_si4735.setFrequency(start);
+    g_currentFrequency = start;
+    g_bandList[g_bandIndex].currentFreq = start;
     g_si4735.seekStationProgress(showFrequencySeek, checkStopSeeking, g_seekDirection);
     // PU2CLR 2.1.8 getFrequency() sends TUNE_STATUS with CANCEL=1.
     showFrequencySeek(g_si4735.getFrequency());
@@ -1469,6 +1489,7 @@ void resetLowerLine()
 //BFO is now part of main frequency in SSB mode
 void doFrequencyTuneSSB(int8_t direction)
 {
+    g_seekDirection = direction == 1 ? 1 : 0;
     uint16_t previousBase = g_currentFrequency;
     int16_t newBFO = int16_t(g_currentBFO + (direction == 1 ? getSteps() : -getSteps()));
     while (newBFO > STATE_MAX_BFO_HZ)
