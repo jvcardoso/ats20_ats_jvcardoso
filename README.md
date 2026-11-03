@@ -1,158 +1,555 @@
-# ATS_EX Firmware for ATS-20 DSP Receiver
-### Руководство на русском языке можно прочитать здесь (Russian README is here) :
-[>>> Ссылка на русский README. <<<](/rus/README.md)
-## Basic description
-This is advanced firmware for **ATS-20** that is working on **Arduino Nano** and **Si473x** DSP receiver chip.
-ATS_EX is created by **Goshante**, based on **PU2CLR** firmware and inspired by **swling.ru** firmware with closed source.
-
-
-**Latest version:** v1.18 (03.04.2024)
-
-**Download binary .hex link:** [>>> Click here <<<](https://github.com/goshante/ats20_ats_ex/releases/download/v1.18/ATS_EX_v1.18.hex)
-
+# ATS_EX Firmware for ATS-20 / ATS-20+ DSP Receiver (`v1.18-r3`)
 
 <p align="center">
-    <img src="img/ats20.png" alt="Icon" />
+  <a href="#english"><strong>🇺🇸 English Documentation</strong></a> &nbsp;|&nbsp;
+  <a href="#portugues-br"><strong>🇧🇷 Documentação em Português (PT-BR)</strong></a> &nbsp;|&nbsp;
+  <a href="/rus/README.md"><strong>🇷🇺 Руководство на русском языке (Russian)</strong></a>
 </p>
-
-# Features
-
- - Fully **reworked interface**. No more ugly stretched fonts. Minimalistic readable interface. 7-Segment frequency font is inspired by swling firmware, but created by me.
- - Fully **reworked controls**. You can read user manual below.
- - **BFO is now part of main frequency** and regulated by frequency step, it is no more dedicated option that makes frequency surfing experience terrible. SSB mode has more precise steps.
- - **LW** Band: From **153** KHz to **520** KHz 
- - **MW** Band: From **520** to **1710** KHz
- - **SW** Band: From **1710** to **30000** KHz (With a lot of sub-bands)
- - **FM** Band: From **64** to **108** MHz.
- - **Dynamic RDS** for **FM** radio stations with an option to switch RDS information lines (Displays UP to 16 characters).
- - AM/FM **Stations scan**.
- - Added **CW mode**.
- - Poorly designed RSSI was removed and replaced with optionaly displayed **S-meter** like scale.
- - All **SW bands** now feel like one large band **from 1710 to 30000 KHz**. It's possible to switch between them, but they no longer restrict the frequency step to the sub-band limits.
- - **The tuning across frequencies has become as smooth as possible** in SSB mode, thanks to the merging of the receive frequency with the BFO. The rough frequency switching now occurs every 16 KHz (**the seamless tuning in both directions covers a full 32 KHz**). In Non-SSB modes now you also can tune faster, **encoder should be more responsive**.
- - **A lot of steps are available for every mode**. In AM you have 1/5/9/10/50/100k/1M steps, in SSB you have 1/5/9/10k steps and 10/25/50/100/500Hz steps for more precise tuning. In FM mode you have 10k/100k/1M steps.
- - Added settings page. You can configure **Gain Control and ATT**, **Soft Mute**, **Automatic Volume Control** (AVC), On or Off **AVC for SSB mode**,  **DeEmphasis** for FM mode and enable or disable **SSB Sync** mode and other useful settings.
- - **BFO** offset **calibration**.
- - Adjustable **screen brightness**.
- - Adjustable **CPU Frequency** for power saving purposes and reducing interference.
- - Added **Mute button** and **Display on/off button**.
- - Added **Battery charge status** (Requires simple physical mod: Make **voltage divider** from two 10 KOhm resistors and solder it's middle output to **A2** pin)
- - Added **S-Meter**
- - **Atm328p controller is now running on it's full clock**. Controls have to be more responsive. (Don't know how it impacts on battery drain.)
- - Code refactoring, optimizations
- - Fixed some bugs
-
- ## About new feature requests...
- Please, no not request new features. This firmware has hit the limit of maximum flash size and optimized as much as possible. It also has the bootloader and I am not going to remove it. 
- I only accept tickets about bugs and errors. This firmware works on the verge of ATS-20 capabilities.
-
- # How to flash it on my receiver?
-You can use any software capable of flashing a .hex firmware file to Arduino. You will only need a Micro USB cable and a **USB UART driver** (most likely, it will be the driver for the **CH341** controller). I recommend using **AVRDUDESS** if you are on Windows. It's a simple tool with a GUI that can dump and flash firmware files onto Atmel microcontrollers (Arduino). 
-
-**There are two types of ATS-20 receivers**: Those on **Arduino Nano** and those on **Arduino Uno**. They are quite easy to distinguish. You need to disassemble and look. The ones on Nano have the Arduino soldered as a separate board onto the main board. If inside there isn't a soldered board and the ATMega368 chip is directly soldered with all components on one board, then you have the Uno revision. This is important to know before flashing. 
-
-You need to select from the **Presets** section either **"Arduino Nano (ATmega328P)"** or **"Arduino Uno (ATmega328P)"**, then select your actual **COM port** and in the **"Flash"** section specify **the path to the .hex firmware file**. Choose the **Write** mode and press the **Go** button next to it. After this, the flashing will start.
-
-Alternatively, you can compile the firmware yourself from the sources that are in this repository. I use Visual Studio 2022 with the VSMicro extension, which uses Arduino IDE 1.8. You can simply use Arduino IDE, compile the sketch yourself, and upload it to the controller directly from the IDE.
-
-## My receiver fails to flash, what should I do?
-This can happen if you're flashing through a USB port that's not capable of supplying sufficient current to power the controller along with the entire device. If you turn on the receiver before connecting it to the PC and connect it to a USB 3.0 port, your chances of success will be much higher. Yes, the receiver does not use USB 3.0, it has version 2.0, but the third version ports can supply more current. And if it still doesn't help, try to reflash the receiver through the Arduino IDE with a dummy firmware (empty programm), build an empty new project without any logic, and flash it into the receiver. After that, try to flash the actual firmware into it again.
-
-# User manual
-**ATTENTION:** After flashing it's strongly **recommended to reset EEPROM memory**. To do this just hold the **Encoder Button** while turning receiver on.
-
-### Button functionality
-#### **BAND+** Button
- 1. **Band selection**: Short press to enter band selection mode. Select the band using **Encoder Rotation** and confirm with the **Encoder Button** or by pressing **BAND+** again. Or hold **BAND+** to quickly scroll through bands forward. In **SW mode** switches to the nearest **SW subband**. After latest SW subband switches to the next (or prev) band.
- 2. **Settings page switch**: This button switches **settings pages** while settings are open.
-#### **BAND-** Button
- 1. **Settings menu**: Short press to open/close **settings menu**. When **closing** settings menu all settings are **saved to EEPROM**.
- 2. **Band selection**: Long press **BAND-** to quickly scroll through bands backward.
-#### **VOL+** Button
- 1. **Volume adjustment**: Short press to enter **volume adjustment** mode. Set the volume using **Encoder Rotation** and confirm with the **Encoder Button** or by pressing **VOL+** again.
- 2. **Quick volume increase**: Hold for quick volume increase.
-#### **VOL-** Button
- 1. **Mute**: Short press to **mute and unmute**.
- 2. **Quick volume decrease**: Hold for quick volume decrease.
-#### **STEP** Button
- 1. **Step adjustment**: Short press to enter **step adjustment** mode. Set the step with **Encoder Rotation** and confirm with the **Encoder Button** or by pressing **STEP** again.
- 2. **Signal level scale**: Long press shows a signal level bar at the bottom, **similar to an S-meter**. Can be turned off with another long or short press, or by changing the band.
-#### **AGC** Button
- 1. **Display on/off**: Short press works as a display switch.
- 2. **Sync mode for SSB**: Long press to switch to **Sync** mode when **SSB** modulation is active.
-#### **BW** Button
- 1. **Bandwidth adjustment**: Short press to enter **bandwidth adjustment** mode. Set the step using **Encoder Rotation** and confirm with the **Encoder Button** or by pressing **BW** again. Each modulation has its set of steps.
-#### **MODE** Button
- 1. **Modulation selection in AM/SSB mode**: Short press to **switch between modulations** in AM/SSB mode. In the **FM** band, the only available modulation is **WFM** (Wide FM), and it's not possible to switch modulation in the FM band (due to Si4735 chip limitations). On all other bands, the following modulations are available: **AM/USB/LSB/CW**. In all modulations (especially in SSB), improved frequency tuning without interruption at each step.
- 2. **RDS in FM band**: Short press allows displaying a **metadata line** decoded from the RDS traffic of the current radio station below the frequency. As long as synchronization is not lost, the RDS string can **dynamically update** if the FM radio station cyclically outputs different information there. In this mode, you can switch between **3 different RDS information modes** using the **Encoder Button**: **Station Name**, **Station Information**, and **Program Information**. If any information cell is not decoded or is missing, three dots **...** will be displayed. If RDS data did not display upon activation or after you stopped on right frequency, you should turn RDS off and on again OR move the encoder to another frequency and return to allow the Si4735 chip to synchronize with the RDS traffic stream again. If synchronization is lost, it automatically restores only after changing frequencies.
-#### **Encoder Rotation**
-1. **Frequency Tuning**: In radio mode (normal mode), rotation adjusts the frequency by the step indicated at the bottom of the screen.
-2. **Settings navigation**: In settings mode, the encoder allows you to select the necessary setting and, after selecting, change its value.
-#### **Encoder Button**
-1. **Frequency scan**: Works **only in FM and AM** modulations and only if option **Sca** is **On** in settings. Press to scan stations by frequency in the last direction with the given step. Rotate encoder or press encoder button to **stop scanning**.
-2. **Universal button**: Confirms settings, makes selections, switches RDS modes.
-3. **EEPROM reset**: Important functionality that allows **resetting settings to defaults**. To do this, turn on the receiver with the encoder button already pressed. After that, the **EEPROM RESET** message should appear.
-4. **Quick step adjustment**: Only for **SSB mode** - pressing allows immediate entry into step adjustment mode. Also works in **AM/FM** modes if option **Sca** is **Off** in settings.
-
-### Settings
-Navigate in settings with **Encoder Rotation**, confirm selection with **Encoder Button**, change value with **Encoder Rotation** and save it with **Encoder Button**. Close settings with **BAND-** button. Navigate between **settings pages** with **BAND+** button.
 
 <p align="center">
-    <img src="img/ats20_settings.png" alt="Icon" />
+    <img src="img/ats20.png" alt="ATS-20 Receiver running ATS_EX" />
 </p>
 
-**ATT** : **Attenuation** value. **AUT** means **Auto Gain Congrol**. This value can be **AUT** and from **1** to **37**. **Warning:** AGC mode (**AUT**) in any SSB modes will add some constant noize (It is present in ANY firmware). it's not highly noticeble, but still keep this in mind.
+| Project / Projeto | Details / Detalhes |
+| :--- | :--- |
+| **Custom Revision / Revisão Customizada** | **`ATS_EX v1.18-r3`** (`JVCARDOSO 2026` — [`jvcardoso/ats20_ats_jvcardoso`](https://github.com/jvcardoso/ats20_ats_jvcardoso)) |
+| **Original Author / Autor Original (`v1.18`)** | **[Goshante (`goshante/ats20_ats_ex`)](https://github.com/goshante/ats20_ats_ex)** |
+| **DSP Library / Biblioteca Base** | **[PU2CLR SI4735 (`pu2clr/SI4735`)](https://github.com/pu2clr/SI4735)** (inspired by `swling.ru`) |
+| **Download `v1.18-r3` (Recommended / Com RDS)** | **[`ATS_EX_v1.18-r3_RDS.hex`](https://github.com/jvcardoso/ats20_ats_jvcardoso/releases/download/v1.18-r3/ATS_EX_v1.18-r3_RDS.hex)** (`30,492` bytes Flash / `1,092` bytes SRAM) |
+| **Download `v1.18-r3` (No RDS / Sem RDS)** | **[`ATS_EX_v1.18-r3_NO_RDS.hex`](https://github.com/jvcardoso/ats20_ats_jvcardoso/releases/download/v1.18-r3/ATS_EX_v1.18-r3_NO_RDS.hex)** (`29,108` bytes Flash / `1,068` bytes SRAM) |
+| **Download Original `v1.18` (Goshante)** | **[`ATS_EX_v1.18.hex`](https://github.com/goshante/ats20_ats_ex/releases/download/v1.18/ATS_EX_v1.18.hex)** (03.04.2024) |
 
-**SM** : **Soft Mute**. This is number from **0** to **32**.
+---
 
-**AVC** :  Automatic Volume Control. This is number from **12** to **90**.
+<a id="english"></a>
 
-**SVC** : Enable or disable **AVC for SSB**.
+# 🇺🇸 English Documentation
 
-**DeE** :  Only for **FM** mode. It's **DeEmphasis** value in microseconds. It can be only **50** or **75**.
+## Basic Description
+**ATS_EX** is an advanced open-source firmware for **ATS-20 / ATS-20+** receivers running on an **ATmega328P (Arduino Nano or Uno)** microcontroller and the **Si473x (Si4732 / Si4735)** DSP receiver chip.
 
-**Syn** : Enable or disable **Sync mode for SSB**.
+Originally created by **[Goshante](https://github.com/goshante/ats20_ats_ex)** on top of the **[PU2CLR SI4735](https://github.com/pu2clr/SI4735)** library, this repository (**[`jvcardoso/ats20_ats_jvcardoso`](https://github.com/jvcardoso/ats20_ats_jvcardoso)**) maintains the **`v1.18-r3` (`JVCARDOSO 2026`)** custom revision with SSB tuning/BFO precision fixes, validated EEPROM storage, bounded RDS buffers, lower SRAM consumption, and reproducible CLI builds.
 
-**SW** : **Frequency units** for AM mode in SW band. It can be only **KHz** or **MHz**. In MHz mode it used dot as delimiter.
+### Boot Splash Screen (`v1.18-r3`)
+```text
++--------------------+
+|  ATS-20 RECEIVER   |
+|  ATS_EX v1.18-r3   |
+|   JVCARDOSO 2026   |
+|  Custom firmware   |
++--------------------+
+```
 
-**SSM** : **SSB Soft Mute Mode**. It can be only **RSS** (SM based on RSSI) or **SNR** (SM based on SNR).
+## What's Improved in Custom Revision `v1.18-r3`
+Key technical improvements over upstream `v1.18`:
+- **Exact SSB Carrier & BFO Rollover (`±15 kHz`)**: Stores the 1 kHz carrier anchor (`g_currentFrequency`) separately from the fine BFO offset (`g_currentBFO`), preventing cumulative tuning drift when crossing `±15 kHz` boundaries or saving/restoring bands.
+- **Cancel Seek by Encoder or Button**: AM/FM station scan (`Sca`) can be aborted immediately either by rotating the tuning encoder or pressing the encoder button.
+- **Validated EEPROM State (`v4`/`v5`)**: Validates all stored parameters on boot and automatically resets to safe defaults if out-of-range or incompatible data is detected. Upgrading from upstream `v1.18` or `r1` restores defaults once; `r3` preserves valid `r2`/`r3` settings for the same RDS variant.
+- **Bounded RDS Buffers (`USE_RDS=1` / `USE_RDS=0`)**: Safely sanitizes PS/RT/PI fields to printable 16-character ASCII strings without buffer overruns.
+- **Nominal CPU Clock**: Removed the runtime CPU clock divider (`CPU` setting) so `millis()`, button debouncing, and EEPROM save timers always run at nominal speed.
+- **Zero-SRAM `PROGMEM` Tables**: Moved band tables and settings metadata to Flash (`FlashAccess.h`), freeing 228 bytes of SRAM (`1,092` B used out of `2,048` B) and fitting comfortably inside the Nano's `30,720`-byte Flash limit (`30,492` B with RDS).
 
-**COF** : **SSB Cutoff Filter**. It has 3 modes: **On** - Band pass filter to cutoff both the unwanted side band and high frequency components. **Off** - Low pass filter to cutoff the unwanted side band. And **AUT** mode: Automatically turns on and off, depending on **Bandwidth** (Off when bandwidth is higher than **2.0 KHz**).
+## Features
+- **Fully reworked minimalistic interface**: Clean, readable layout with a custom 7-segment frequency font (no stretched characters).
+- **Fully reworked controls**: Intuitive single-hand operation (see the [User Manual](#user-manual-en) below).
+- **Seamless SSB tuning**: BFO is integrated into the main frequency display and regulated directly by the selected tuning step. The carrier rebases every `15 kHz` (`-15 kHz` to `+15 kHz`, covering a continuous `30 kHz` fine-tuning window).
+- **Wide frequency coverage**:
+  - **LW**: `153` – `520` kHz
+  - **MW**: `520` – `1710` kHz
+  - **SW**: `1710` – `30000` kHz (continuous tuning across all SW sub-bands, including CB and all HF Ham Radio bands from 160m to 10m)
+  - **FM**: `64` – `108` MHz
+- **Modulations**: `AM`, `LSB`, `USB`, and `CW` on LW/MW/SW; `WFM` on FM.
+- **Dynamic FM RDS**: Displays up to 16 characters of Station Name, Station Info, or Program Info below the frequency.
+- **AM/FM Station Scan (`Sca`)**: Scans in the last tuning direction (`100 kHz` spacing on FM; `1/5/9/10 kHz` on AM).
+- **Rich tuning steps**:
+  - **AM**: `1k`, `5k`, `9k`, `10k`, `50k`, `100k`, `1M`
+  - **SSB / CW**: `10 Hz`, `25 Hz`, `50 Hz`, `100 Hz`, `500 Hz`, `1k`, `5k`, `9k`, `10k`
+  - **FM**: `50k`, `100k`, `1M`
+- **Optional S-Meter scale**: Toggleable signal strength bar at the bottom of the screen (long press `STEP`).
+- **Comprehensive Settings Menu**: Configure `ATT`/AGC, Soft Mute (`SM`), Automatic Volume Control (`AVC`), SSB AVC (`SVC`), FM De-Emphasis (`DeE`), SSB Sync (`Syn`), Screen Brightness (`Scr`), SW units (`SW`), SSB Soft Mute mode (`SSM`), SSB Cutoff Filter (`COF`), RDS error threshold (`RDS`), permanent BFO calibration (`BFO`), units display (`Uni`), Scan toggle (`Sca`), and CW sideband (`CW`).
+- **Quick Mute (`VOL-`)** and **Display On/Off (`AGC`)** buttons.
+- **Battery Charge Indicator**: Automatically displayed when a two-resistor (`10 kΩ` + `10 kΩ`) voltage divider is connected to pin `A2`.
 
-**CPU** : **CPU Frequency**. This is useful for **battery saving** purposes. It can be only **100** or **50%**. 100% - CPU works on x1 of own frequency, using it's full potential. 50% - CPU works on half of it's own frequency, it's slower, but allowing you to save more battery.
+---
 
-**RDS** : **RDS Decoding error threshold** level. The lower this number, the better the RDS text appears, but the lower the chances for successful sync. The higher this value, the easier it is to decode the RDS stream, but it could look messed up frequently. This is number from **0** to **3**.
+<a id="how-to-flash-it-on-my-receiver"></a>
 
-**BFO** : **BFO Offset calibration**. One unit of this parameter is **1 Hz * 10** or **0.01 KHz**. This is permanent **BFO offset for SSB**. If you think SSB frequency is not precise enough you can calibrate it. Allowed offset value is from **-60 to 60 units** or from **-0.60 KHz to 0.60 KHz**.
+## How to Flash It on Your Receiver
 
-**Uni** : Show/Hide **frequency units**.
+> **IMPORTANT TIP BEFORE FLASHING:** Keep the receiver's **physical power switch turned ON** (running on battery) while connected to a **USB 3.0 port** on your computer. The Si4735 DSP and OLED screen draw extra current on reset; having the battery switched ON prevents USB voltage drops that can interrupt flashing around ~70%.
 
-**Sca** : On/Off **station scan feature** in AM or FM modes on **encoder button**. In disabled state **encoder button will always act as a Step button**.
+### Step 1: Identify Your Receiver Board & Bootloader
+ATS-20 / ATS-20+ receivers come with an **ATmega328P** MCU and a **CH340/CH341 USB-UART** chip (`VID:PID 1a86:7523`), in two hardware revisions:
+1. **Arduino Nano revision**: An Arduino Nano module is soldered as a daughterboard onto the main PCB (typically uses **Old Bootloader at `57600` baud**, or **New Optiboot at `115200` baud**).
+2. **Arduino Uno / Integrated revision**: The ATmega328P chip is soldered directly onto the main PCB (uses **Optiboot at `115200` baud**).
 
-**CW** : **CW Side mode**. Based on **LSB** or **USB** modulation.
+Note: Both `nano` and `uno` profiles use the exact same `.hex` firmware file (`ATS_EX_v1.18-r3_RDS.hex`). The only difference during upload is the bootloader baud rate (`115200` vs `57600`).
 
-### Display elements description
+---
+
+### Option A: Flashing on Windows (`AVRDUDESS` GUI)
+1. Install the **CH341 USB-UART driver** if Windows does not detect the receiver's COM port automatically.
+2. Download and open **[AVRDUDESS](https://blog.zakkemble.net/avrdudess-a-gui-for-avrdude/)**.
+3. Turn the receiver **ON** and plug in the Micro-USB / USB-C cable.
+4. Under **Presets**, select:
+   - **"Arduino Uno (ATmega328P)"** (`115200` baud), OR
+   - **"Arduino Nano (ATmega328P)"** / **"Arduino Nano (ATmega328P, Old Bootloader)"** (`57600` baud) if `115200` does not respond.
+5. Select your receiver's **COM port**.
+6. *(Recommended — Backup current firmware)*: In the **Flash** section, choose a destination filename (e.g. `backup_flash.hex`), select **Read**, and click **Go**.
+7. *(Write new firmware)*: In the **Flash** section, browse to **`ATS_EX_v1.18-r3_RDS.hex`**, select **Write**, and click **Go**.
+8. If the first attempt stops around ~70%, simply click **Go** a second time immediately — the second pass will complete `100%` and reboot into `ATS_EX v1.18-r3`.
+
+---
+
+### Option B: USB Backup, Flashing & Restore on macOS / Linux (`avrdude` CLI)
+
+#### 1. Detect the USB serial port and test bootloader baud rate
+Connect the receiver with its power switch **ON** and list the serial port:
+
+```sh
+# macOS:
+ls -l /dev/cu.usbserial*
+# Linux:
+ls -l /dev/ttyUSB*
+```
+
+Test communication in read-only mode (`-n`) at `115200` baud first (if it times out, replace `-b 115200` with `-b 57600`):
+
+```sh
+AVRDUDE="$HOME/Library/Arduino15/packages/arduino/tools/avrdude/8.0.0-arduino1/bin/avrdude"
+AVRDUDE_CONF="$HOME/Library/Arduino15/packages/arduino/tools/avrdude/8.0.0-arduino1/etc/avrdude.conf"
+PORT="/dev/cu.usbserial-11440"   # Replace with your port
+BAUD="115200"                    # Use 115200 (Optiboot) or 57600 (Old Bootloader)
+
+"$AVRDUDE" -C "$AVRDUDE_CONF" -N -p m328p -c arduino -P "$PORT" -b "$BAUD" -D -n -U "signature:r:-:h"
+# Expected output for ATmega328P: 0x1e,0x95,0xf
+```
+
+#### 2. Back up the current Flash memory (`flash.hex`)
+Read the full 32 KB Flash and 3-byte MCU signature using `-n` (no-write) and `-D` (no auto-erase):
+
+```sh
+backup_dir="$HOME/Desktop/ats-backup-$(date +%Y%m%d-%H%M%S)"
+mkdir -p "$backup_dir"
+
+"$AVRDUDE" -C "$AVRDUDE_CONF" \
+  -N -p m328p -c arduino -P "$PORT" -b "$BAUD" -D -n \
+  -U "flash:r:$backup_dir/flash.hex:i" \
+  -U "signature:r:$backup_dir/signature.bin:r"
+
+shasum -a 256 "$backup_dir"/*
+```
+
+> **Note on EEPROM backups over USB:** In Arduino AVR core 1.8.8, Optiboot ignores the memory-type parameter in STK500v1 page-read requests and returns Flash bytes instead of EEPROM bytes. Therefore, USB backups reliably preserve the program Flash (`flash.hex`), whereas reading raw EEPROM or fuse/lock bits requires an external ISP programmer.
+
+#### 3. Flash and verify `ATS_EX v1.18-r3`
+Run the chained command below. If the receiver is running an active firmware with the OLED and Si4735 powered on, the first pass may time out around ~70% right after clearing page 0; the chained second pass (`||`) immediately completes `100%` write and byte-for-byte verification:
+
+```sh
+HEX_FILE="build/releases/ATS_EX_v1.18-r3_RDS.hex"
+
+"$AVRDUDE" -C "$AVRDUDE_CONF" \
+  -N -p m328p -c arduino -P "$PORT" -b "$BAUD" -D \
+  -U "flash:w:$HEX_FILE:i" || \
+"$AVRDUDE" -C "$AVRDUDE_CONF" \
+  -N -p m328p -c arduino -P "$PORT" -b "$BAUD" -D \
+  -U "flash:w:$HEX_FILE:i"
+```
+
+Wait for `avrdude` to report `30492 bytes of flash verified`. The receiver will reboot and show the `ATS_EX v1.18-r3` / `JVCARDOSO 2026` splash screen.
+
+#### 4. Restore a previous Flash backup (Rollback)
+```sh
+"$AVRDUDE" -C "$AVRDUDE_CONF" \
+  -N -p m328p -c arduino -P "$PORT" -b "$BAUD" -D \
+  -U "flash:w:$backup_dir/flash.hex:i"
+```
+
+---
+
+### Option C: Building and Testing from Source
+This repository includes a reproducible build script (`scripts/build.py`) and a host regression test suite (`tests/run.py`). Pinned dependencies are defined in `ATS_EX/sketch.yaml` and downloaded automatically by Arduino CLI:
+
+```sh
+# Compile Nano and Uno profiles (both RDS=1 and RDS=0):
+python3 scripts/build.py
+
+# Compile only the Nano profile with RDS enabled:
+python3 scripts/build.py --profile nano --rds 1
+
+# Run host regression tests with AddressSanitizer and UndefinedBehaviorSanitizer:
+python3 tests/run.py
+```
+
+---
+
+<a id="user-manual-en"></a>
+
+## User Manual
+
+> **EEPROM Reset:** Upgrading from `v1.18` or `r1` resets EEPROM to safe defaults automatically. To manually reset all settings to factory defaults at any time, **press and hold the Encoder Button while turning the receiver ON** until **`EEPROM RESET`** appears on screen.
+
+### Button Functionality
+- **`BAND+`**:
+  1. **Short press**: Enter band selection mode (rotate encoder to choose, press encoder button or `BAND+` to confirm). In SW mode, jumps across SW sub-bands.
+  2. **Long press**: Quickly scroll through bands forward.
+  3. **In Settings menu**: Switch between Settings pages.
+- **`BAND-`**:
+  1. **Short press**: Open / close the **Settings menu** (settings are saved to EEPROM when closing).
+  2. **Long press**: Quickly scroll through bands backward.
+- **`VOL+`**:
+  1. **Short press**: Enter volume adjustment mode.
+  2. **Long press**: Quickly increase volume.
+- **`VOL-`**:
+  1. **Short press**: **Mute / Unmute** audio (`M` is shown in place of volume).
+  2. **Long press**: Quickly decrease volume.
+- **`STEP`**:
+  1. **Short press**: Enter tuning step selection mode.
+  2. **Long press**: Toggle the **S-Meter** signal strength bar at the bottom of the screen.
+- **`AGC`**:
+  1. **Short press**: Turn the OLED **Display ON / OFF** (saves battery and reduces RF noise).
+  2. **Long press**: Toggle **SSB Sync (`S`)** mode when in LSB/USB.
+- **`BW`**:
+  1. **Short press**: Select the audio/IF **Bandwidth filter** for the active modulation.
+- **`MODE`**:
+  1. **In LW/MW/SW**: Cycle between **`AM`**, **`LSB`**, **`USB`**, and **`CW`** modulations.
+  2. **In FM**: Toggle **RDS display** on/off.
+- **Encoder Rotation**:
+  1. **Normal mode**: Tune frequency by the active step.
+  2. **Settings / Menus**: Navigate and adjust values.
+- **Encoder Button**:
+  1. **In AM/FM (when `Sca` is `On`)**: Start **station scan** in the last tuning direction. Rotate the encoder or press the encoder button to **cancel scanning**.
+  2. **In SSB/CW (or when `Sca` is `Off`)**: Quick shortcut to adjust the **tuning step**.
+  3. **In FM with RDS active**: Cycle between **Station Name**, **Station Info**, and **Program Info**.
+  4. **Held during power-on**: Perform an **EEPROM Reset**.
+
+### Settings Menu
 
 <p align="center">
-    <img src="img/ats20_display.png" alt="Icon" />
+    <img src="img/ats20_settings.png" alt="ATS_EX Settings Pages" />
 </p>
 
- **1**. **Current modulation**. From **149** to **30000** KHz you have **AM/LSB/USB/CW** modulations available. When **Sync** is active in **SSB** modes, the  **S** letter will appear near modulation status. In **FM** band you have only **FM** (or **WFM**) modulation. I don't have **NBFM patch** for **Si473x**, so it's not available now.
- 
- **2**. **Bandwidth** status. Can be **AUTO** in **FM** mode. Not available in **CW** mode.
- 
- **3**.  **Current frequency**. In **FM** and **SSB** modes it has fractional part. 
- 
-  **4**.  **Band name**. There are such bands as **LW, MW, SW, CB** and **FM**.
+- **`ATT`**: RF Attenuation (`AUT` for Automatic Gain Control, or manual `1` to `37`).
+- **`SM`**: Soft Mute attenuation (`0` to `32`).
+- **`AVC`**: Automatic Volume Control maximum gain (`12` to `90`).
+- **`SVC`**: Enable/disable Automatic Volume Control in SSB mode (`On` / `Off`).
+- **`DeE`**: FM De-Emphasis time constant (`50` µs for Europe/Brazil/most of the world, `75` µs for Americas/South Korea).
+- **`Syn`**: Enable/disable SSB Sync mode (`On` / `Off`).
+- **`Scr`**: OLED Screen brightness (`5` to `125`).
+- **`SW`**: Shortwave AM frequency unit (`KHz` or `MHz`).
+- **`SSM`**: SSB Soft Mute trigger mode (`RSS` based on RSSI, or `SNR` based on Signal-to-Noise Ratio).
+- **`COF`**: SSB Cutoff Filter (`On` = bandpass filter, `Off` = low-pass filter, `AUT` = automatically enabled when bandwidth is `≤ 2.0 kHz`).
+- **`RDS`**: FM RDS error tolerance threshold (`0` = strictest/cleanest text, `3` = most tolerant on weak signals).
+- **`BFO`**: Permanent SSB BFO calibration offset (`-60` to `+60`, where each unit is `10 Hz` / `0.01 kHz`, allowing `-0.60 kHz` to `+0.60 kHz` calibration).
+- **`Uni`**: Show or hide frequency unit labels (`On` / `Off`).
+- **`Sca`**: Enable or disable AM/FM station scan on the Encoder Button (`On` / `Off`).
+- **`CW`**: Select base sideband used for CW reception (`LSB` or `USB`).
 
-**5**.  **Step value**. It is different for all modulations, **SSB has more precise steps**, but doesn't have large. AM has harger steps, but doesn't have precise. If it doesn't have a units suffix, that means that it's **Hz**.
+### Display Elements Description
 
-**6**.  **Frequency units**. Units are always displayed, except when decimal part of frequency in **SSB** is **5 digits long**.
+<p align="center">
+    <img src="img/ats20_display.png" alt="ATS_EX Display Elements" />
+</p>
 
-**7**.  **Volume**. This is sound volume of receiver. Could be value between **0** and **63**. When mute is enabled it displays letter **M** instead of volume.
+1. **Current Modulation**: `AM`, `LSB`, `USB`, `CW` (from `153` to `30000` kHz), or `FM` (`64` to `108` MHz). Shows `S` next to `LSB`/`USB` when Sync is active.
+2. **Bandwidth (`BW`)**: Active filter width (or `AUTO` in FM; hidden in `CW`).
+3. **Current Frequency**: Main 7-segment readout (includes `.xx` kHz fractional digits in `SSB`/`CW` and `.xx` MHz in `FM`).
+4. **Band Name**: Active band indicator (`LW`, `MW`, `SW`, `CB`, `FM`).
+5. **Step Value**: Current tuning increment (values without a suffix are in **Hz**, e.g. `10`, `50`, `100`, `500`).
+6. **Frequency Units**: `KHz` or `MHz` (automatically hidden when 5-digit SSB frequency + fractional display needs the space).
+7. **Volume / Mute**: Audio level (`0`–`63`), or `M` when muted.
+8. **Battery Charge Level**: Battery percentage (requires the simple two-resistor voltage divider on pin `A2`; hidden if not installed).
 
-**8**.  **Battery charge level** in percents. Requires **voltage divider** soldered to **A2** pin. Not displayed if not connected. When charge level is too low or USB connected on some revisions this indicator will display **---**.
+---
 
-# How to make the battery charge level display?
+## Quick Guide: Listening to Amateur Radio (HF / SSB / CW) on the ATS-20
 
-You will need a soldering iron and two resistors of **10kΩ** each. Solder one resistor to the negative (ground) and the other directly to the positive of the lithium battery. Then solder their meeting point together; this will be their midpoint. You need to solder it to pin **A2** on the controller. Thus, half of the battery voltage will be applied to it. By making such a simple modification, the **ATX_EX** firmware will automatically detect the connected battery voltage pin and start displaying the charge.
+By international convention, HF voice transmissions use **SSB (Single Sideband)**:
+- **Below 10 MHz (`160m`, `80m`, `40m`)** → select **`LSB`** with the **`MODE`** button.
+- **Above 10 MHz (`20m`, `17m`, `15m`, `12m`, `10m` and CB `11m`)** → select **`USB`** with the **`MODE`** button.
+- **Morse Code (Telegraphy)** → select **`CW`** with the **`MODE`** button (typically in the first `50 kHz` of each band).
+
+| Band | Frequency (kHz) | Voice Modulation | Best Time / Propagation Tip |
+| :--- | :--- | :---: | :--- |
+| **80 meters** | `3500` – `3800` kHz | **`LSB`** | Night and early morning (regional/national nets) |
+| **40 meters** | `7000` – `7300` kHz | **`LSB`** | **Most active band!** Late afternoon, night, and morning (`7050`–`7200` kHz) |
+| **20 meters** | `14000` – `14350` kHz | **`USB`** | Daytime and late afternoon (international DX, `14150`–`14300` kHz) |
+| **15 meters** | `21000` – `21450` kHz | **`USB`** | Daytime |
+| **11 meters (CB)** | `26965` – `27405` kHz | **`AM` / `LSB` / `USB`** | All day (e.g., Channel 19 at `27185` kHz) |
+| **10 meters** | `28000` – `29700` kHz | **`USB`** | Daytime during good solar propagation (`28300`–`28600` kHz) |
+
+**Practical tips for clean SSB reception:**
+1. **Filter (`BW`)**: In **`LSB`/`USB`**, press **`BW`** and select **`2.2k`** or **`1.8k`** for voice, or **`0.5k` / `1.0k`** for **`CW`**.
+2. **Fine tuning (`STEP`)**: In SSB, press the **Encoder Button** (or **`STEP`**) to quickly toggle between **`1k`** (for scanning across the band) and **`100` Hz / `50` Hz / `10` Hz** (to clarify voice pitch).
+3. **Antenna**: On `40m` and `80m`, clipping a simple **5 to 10 meter wire** onto the telescopic whip (stretched toward a window or balcony) dramatically improves reception.
+
+---
+
+## How to Add the Battery Charge Level Indicator (Pin `A2` Mod)
+Solder two **`10 kΩ`** resistors in series between the **battery positive (`+`)** and **ground (`-`)**, and connect their midpoint to pin **`A2`** on the Arduino/ATmega328P. This applies half the battery voltage to `A2`, and `ATS_EX` will automatically detect and display the battery percentage on screen.
+
+---
+
+<a id="portugues-br"></a>
+
+# 🇧🇷 Documentação em Português (PT-BR)
+
+## Descrição Básica
+O **ATS_EX** é um firmware avançado de código aberto para os receptores **ATS-20 / ATS-20+** equipados com microcontrolador **ATmega328P (Arduino Nano ou Uno)** e chip DSP **Si473x (Si4732 / Si4735)**.
+
+Criado originalmente por **[Goshante (`goshante/ats20_ats_ex`)](https://github.com/goshante/ats20_ats_ex)** sobre a biblioteca **[PU2CLR SI4735](https://github.com/pu2clr/SI4735)** (do brasileiro Ricardo Caratti, PU2CLR), este repositório (**[`jvcardoso/ats20_ats_jvcardoso`](https://github.com/jvcardoso/ats20_ats_jvcardoso)**) mantém a revisão customizada **`v1.18-r3` (`JVCARDOSO 2026`)**, trazendo correções de precisão de sintonia SSB/BFO, validação segura de EEPROM, proteção de buffers RDS, redução no consumo de memória RAM e guia completo de atualização via USB.
+
+### Tela de Inicialização (`v1.18-r3`)
+```text
++--------------------+
+|  ATS-20 RECEIVER   |
+|  ATS_EX v1.18-r3   |
+|   JVCARDOSO 2026   |
+|  Custom firmware   |
++--------------------+
+```
+
+## O que há de novo na revisão `v1.18-r3` (`JVCARDOSO 2026`)
+Principais melhorias técnicas sobre a versão `v1.18` original:
+- **Sintonia SSB e Rollover de BFO exatos (`±15 kHz`)**: A portadora de 1 kHz (`g_currentFrequency`) agora é salva separadamente do deslocamento fino de BFO (`g_currentBFO`), eliminando desvios cumulativos de frequência ao cruzar `±15 kHz` ou ao trocar de banda.
+- **Cancelamento imediato de Busca (`Scan`)**: A busca automática de estações em AM/FM pode ser interrompida na hora girando o encoder ou apertando o botão do encoder.
+- **EEPROM Validada (`v4`/`v5`)**: Todos os dados lidos da EEPROM são validados na inicialização; caso haja valores corrompidos ou de uma versão antiga incompatível (`v1.18` original ou `r1`), o rádio restaura os padrões de fábrica automaticamente com segurança.
+- **Buffers RDS Protegidos (`USE_RDS=1` / `USE_RDS=0`)**: Sanitização completa das mensagens RDS (até 16 caracteres ASCII imprimíveis) sem risco de estouro de memória.
+- **Clock Nominal Estável**: Removida a divisão de clock da CPU para garantir que `millis()`, leitura de botões e temporizadores da EEPROM funcionem sempre com tempo exato.
+- **Tabelas em `PROGMEM` (Mais Memória Livre)**: Tabelas de bandas e configurações movidas para a memória Flash (`FlashAccess.h`), economizando 228 bytes de SRAM (`1.092` B usados de `2.048` B — `46,7%` livres) e cabendo com folga no limite de `30.720` bytes do Arduino Nano (`30.492` B com RDS).
+
+## Principais Funcionalidades
+- **Interface totalmente redesenhada**: Visual limpo, sem fontes esticadas, com fonte numérica de 7 segmentos própria.
+- **Sintonia SSB contínua e suave**: O BFO faz parte direta da frequência principal exibida na tela. A portadora é reancorada a cada `15 kHz` (`-15 kHz` a `+15 kHz`, cobrindo `30 kHz` contínuos de sintonia fina).
+- **Cobertura completa de frequências**:
+  - **LW (Ondas Longas)**: `153` a `520` kHz
+  - **MW (Ondas Médias / AM)**: `520` a `1710` kHz
+  - **SW (Ondas Curtas)**: `1710` a `30000` kHz (sintonia contínua entre todas as sub-bandas, incluindo Faixa do Cidadão/PX 11m e todas as faixas de Radioamador HF de 160m a 10m)
+  - **FM**: `64` a `108` MHz
+- **Modulações**: `AM`, `LSB`, `USB` e `CW` (telegrafia) em LW/MW/SW; `WFM` em FM.
+- **RDS Dinâmico no FM**: Exibe até 16 caracteres com Nome da Estação, Texto da Estação ou Informação de Programação abaixo da frequência.
+- **Busca Automática de Estações (`Scan`)** em AM e FM.
+- **Passos de sintonia (`STEP`) variados**:
+  - **AM**: `1k`, `5k`, `9k`, `10k`, `50k`, `100k`, `1M`
+  - **SSB / CW**: `10 Hz`, `25 Hz`, `50 Hz`, `100 Hz`, `500 Hz`, `1k`, `5k`, `9k`, `10k`
+  - **FM**: `50k`, `100k`, `1M`
+- **S-Meter integrado**: Barra de intensidade de sinal na base da tela (segure `STEP`).
+- **Botão Mute (`VOL-`)** e **Botão para desligar a tela OLED (`AGC`)** (economiza bateria e reduz ruído de RF).
+- **Indicador de nível de bateria (`%`)**: Ativado automaticamente ao instalar o divisor de tensão com 2 resistores de `10 kΩ` no pino `A2`.
+
+---
+
+## Como Fazer Backup e Atualizar o Firmware no seu Rádio
+
+> **DICA ESSENCIAL ANTES DE GRAVAR:** Conecte o rádio ao computador com a **chave física traseira ligada (`ON`)** e prefira uma **porta USB 3.0**. Quando o rádio reinicia durante a gravação, o chip Si4735 e a tela OLED consomem mais corrente; manter a bateria ligada evita quedas de tensão na USB que interrompem a gravação perto de ~70%.
+
+### Passo 1: Identifique a placa e o Bootloader do seu ATS-20
+Os receptores ATS-20 / ATS-20+ usam o microcontrolador **ATmega328P** com conversor USB-Serial **CH340/CH341** (`VID:PID 1a86:7523`) e existem em duas revisões internas:
+1. **Revisão Arduino Nano**: Possui uma plaquinha Arduino Nano soldada sobre a placa principal (pode usar **Old Bootloader em `57600` baud** ou **Optiboot novo em `115200` baud**).
+2. **Revisão Arduino Uno (Integrada)**: O chip ATmega328P é soldado diretamente na placa principal do rádio (usa **Optiboot em `115200` baud**).
+
+Observação: O arquivo `.hex` (`ATS_EX_v1.18-r3_RDS.hex`) é **exatamente o mesmo** para ambas as versões. A única diferença na hora de gravar é a velocidade da porta (`115200` ou `57600` baud).
+
+---
+
+### Opção A: Gravando pelo Windows (`AVRDUDESS`)
+1. Instale o driver **CH341 USB-UART** caso o Windows não reconheça a porta COM automaticamente.
+2. Baixe o arquivo **[`ATS_EX_v1.18-r3_RDS.hex`](https://github.com/jvcardoso/ats20_ats_jvcardoso/releases/latest)** na página de Releases.
+3. Baixe e abra o programa **[AVRDUDESS](https://blog.zakkemble.net/avrdudess-a-gui-for-avrdude/)**.
+4. Ligue o rádio na chave traseira (**ON**) e conecte o cabo USB ao PC.
+5. Em **Presets**, selecione:
+   - **"Arduino Uno (ATmega328P)"** (`115200` baud), OU
+   - **"Arduino Nano (ATmega328P, Old Bootloader)"** (`57600` baud) caso `115200` não responda.
+6. Selecione a **porta COM** do rádio.
+7. *(Recomendado — Fazer Backup antes)*: Na seção **Flash**, escolha um caminho para salvar (ex.: `backup_original.hex`), marque a opção **Read** e clique em **Go**.
+8. *(Gravar o novo firmware)*: Na seção **Flash**, selecione o arquivo **`ATS_EX_v1.18-r3_RDS.hex`**, marque **Write** e clique em **Go**.
+9. Caso a primeira tentativa pare em torno de ~70%, basta clicar em **Go** novamente em seguida — a segunda passada completará `100%` e o rádio reiniciará já com o `ATS_EX v1.18-r3`.
+
+---
+
+### Opção B: Backup, Gravação e Restauração no macOS / Linux (`avrdude`)
+
+#### 1. Descobrir a porta USB e confirmar o baud rate (`115200` vs `57600`)
+Com o rádio ligado (**ON**) e conectado via USB, liste a porta serial:
+
+```sh
+# No macOS:
+ls -l /dev/cu.usbserial*
+# No Linux:
+ls -l /dev/ttyUSB*
+```
+
+Teste a leitura da assinatura do chip em modo somente-leitura (`-n`) usando `115200` baud (se não responder, troque `115200` por `57600`):
+
+```sh
+AVRDUDE="$HOME/Library/Arduino15/packages/arduino/tools/avrdude/8.0.0-arduino1/bin/avrdude"
+AVRDUDE_CONF="$HOME/Library/Arduino15/packages/arduino/tools/avrdude/8.0.0-arduino1/etc/avrdude.conf"
+PORT="/dev/cu.usbserial-11440"   # Substitua pela porta do seu rádio
+BAUD="115200"                    # Use 115200 (Optiboot) ou 57600 (Old Bootloader)
+
+"$AVRDUDE" -C "$AVRDUDE_CONF" -N -p m328p -c arduino -P "$PORT" -b "$BAUD" -D -n -U "signature:r:-:h"
+# Saída esperada para o ATmega328P: 0x1e,0x95,0xf
+```
+
+#### 2. Fazer Backup completo da Flash atual (`flash.hex`)
+Salve uma cópia dos 32 KB da Flash atual no seu Desktop antes de atualizar:
+
+```sh
+backup_dir="$HOME/Desktop/ats-backup-$(date +%Y%m%d-%H%M%S)"
+mkdir -p "$backup_dir"
+
+"$AVRDUDE" -C "$AVRDUDE_CONF" \
+  -N -p m328p -c arduino -P "$PORT" -b "$BAUD" -D -n \
+  -U "flash:r:$backup_dir/flash.hex:i" \
+  -U "signature:r:$backup_dir/signature.bin:r"
+
+shasum -a 256 "$backup_dir"/*
+```
+
+> **Nota técnica sobre EEPROM via USB:** No Optiboot (Arduino AVR core 1.8.8), o bootloader ignora o parâmetro de tipo de memória nas leituras STK500v1 e devolve bytes da Flash no lugar da EEPROM. Por isso, o backup via cabo USB preserva fielmente o programa (`flash.hex`), enquanto a leitura física da EEPROM exige gravador ISP externo.
+
+#### 3. Gravar e verificar o firmware `ATS_EX v1.18-r3`
+Execute o comando encadeado abaixo. Se o rádio estiver com o display OLED e o Si4735 ativos na primeira tentativa, pode haver um timeout por volta de ~70% logo após limpar a página 0; a segunda chamada encadeada (`||`) conclui `100%` da escrita e verificação byte a byte imediatamente:
+
+```sh
+HEX_FILE="build/releases/ATS_EX_v1.18-r3_RDS.hex"
+
+"$AVRDUDE" -C "$AVRDUDE_CONF" \
+  -N -p m328p -c arduino -P "$PORT" -b "$BAUD" -D \
+  -U "flash:w:$HEX_FILE:i" || \
+"$AVRDUDE" -C "$AVRDUDE_CONF" \
+  -N -p m328p -c arduino -P "$PORT" -b "$BAUD" -D \
+  -U "flash:w:$HEX_FILE:i"
+```
+
+Ao terminar, o `avrdude` exibirá `30492 bytes of flash verified` e o rádio reiniciará exibindo a tela `ATS_EX v1.18-r3` / `JVCARDOSO 2026`.
+
+#### 4. Restaurar o backup anterior (Rollback)
+Caso queira voltar para o firmware salvo no passo 2:
+
+```sh
+"$AVRDUDE" -C "$AVRDUDE_CONF" \
+  -N -p m328p -c arduino -P "$PORT" -b "$BAUD" -D \
+  -U "flash:w:$backup_dir/flash.hex:i"
+```
+
+---
+
+### Opção C: Compilando do Código-Fonte e Rodando os Testes
+Este repositório inclui um script de build reproduzível (`scripts/build.py`) e uma suíte de testes de regressão no host (`tests/run.py`). As dependências fixadas em `ATS_EX/sketch.yaml` são baixadas automaticamente pelo Arduino CLI:
+
+```sh
+# Compilar os perfis Nano e Uno (com RDS=1 e RDS=0):
+python3 scripts/build.py
+
+# Compilar apenas o perfil Nano com RDS ativado:
+python3 scripts/build.py --profile nano --rds 1
+
+# Executar os testes de regressão com AddressSanitizer e UndefinedBehaviorSanitizer:
+python3 tests/run.py
+```
+
+---
+
+## Manual do Usuário (PT-BR)
+
+> **Reset de EEPROM:** Ao atualizar a partir do `v1.18` original, o rádio redefine a EEPROM automaticamente para os padrões seguros. Para fazer um **Reset de Fábrica manual** a qualquer momento, **mantenha o Botão do Encoder pressionado enquanto liga o rádio na chave traseira** até aparecer **`EEPROM RESET`** na tela.
+
+### Funções dos Botões
+- **`BAND+`**:
+  1. **Toque curto**: Entra na seleção de bandas (gire o encoder para escolher e confirme no botão do encoder ou em `BAND+`). Em Ondas Curtas (`SW`), avança para a sub-banda seguinte.
+  2. **Pressionar e segurar**: Avança rapidamente pelas bandas.
+  3. **Dentro do menu Settings**: Alterna entre as páginas de configurações.
+- **`BAND-`**:
+  1. **Toque curto**: Abre e fecha o **Menu de Configurações** (ao fechar, todas as alterações são salvas na EEPROM).
+  2. **Pressionar e segurar**: Retrocede rapidamente pelas bandas.
+- **`VOL+`**:
+  1. **Toque curto**: Abre o ajuste de volume.
+  2. **Pressionar e segurar**: Aumenta o volume rapidamente.
+- **`VOL-`**:
+  1. **Toque curto**: **Mute / Desmute** imediato (mostra a letra `M` no lugar do volume).
+  2. **Pressionar e segurar**: Diminui o volume rapidamente.
+- **`STEP`**:
+  1. **Toque curto**: Seleciona o passo de sintonia (`Step`).
+  2. **Pressionar e segurar**: Liga/desliga a barra de sinal **S-Meter** na parte inferior da tela.
+- **`AGC`**:
+  1. **Toque curto**: **Liga / Desliga a tela OLED** (excelente para economizar bateria e eliminar ruídos na recepção de sinais fracos).
+  2. **Pressionar e segurar**: Liga/desliga o modo **Sync (`S`)** quando estiver em SSB (`LSB`/`USB`).
+- **`BW`**:
+  1. **Toque curto**: Ajusta a **largura de filtro (`Bandwidth`)** da modulação atual.
+- **`MODE`**:
+  1. **Em LW/MW/SW**: Alterna entre as modulações **`AM`**, **`LSB`**, **`USB`** e **`CW`**.
+  2. **No FM**: Liga/desliga a linha de texto **RDS**.
+- **Giro do Encoder**:
+  1. **Modo normal**: Sintoniza a frequência no passo escolhido.
+  2. **Modo de configuração**: Navega entre os itens e altera seus valores.
+- **Botão do Encoder**:
+  1. **Em AM/FM (com `Sca` = `On`)**: Inicia a **busca automática de estações (`Scan`)** na última direção utilizada. Gire o encoder ou aperte o botão novamente para **parar a busca**.
+  2. **Em SSB/CW (ou com `Sca` = `Off`)**: Atalho rápido para trocar o **passo de sintonia (`Step`)**.
+  3. **No FM com RDS ativo**: Alterna entre os 3 modos de texto RDS (**Nome da Estação**, **Informação da Estação** e **Programação**).
+  4. **Segurado ao ligar o rádio**: Executa o **Reset da EEPROM**.
+
+### Menu de Configurações (`Settings`)
+
+<p align="center">
+    <img src="img/ats20_settings.png" alt="Páginas de Configuração do ATS_EX" />
+</p>
+
+- **`ATT`**: Atenuação de RF (`AUT` = Controle Automático de Ganho AGC ativo, ou manual de `1` a `37`).
+- **`SM`**: Soft Mute (`0` a `32`) — atenua o áudio quando não há sinal.
+- **`AVC`**: Controle Automático de Volume (`12` a `90`).
+- **`SVC`**: Ativa/desativa o AVC no modo SSB (`On` / `Off`).
+- **`DeE`**: De-Emphasis do FM (`50` µs usado no Brasil e Europa; `75` µs usado nos EUA).
+- **`Syn`**: Ativa/desativa o modo Sync em SSB (`On` / `Off`).
+- **`Scr`**: Brilho da tela OLED (`5` a `125`).
+- **`SW`**: Unidade de exibição em Ondas Curtas AM (`KHz` ou `MHz`).
+- **`SSM`**: Critério do Soft Mute em SSB (`RSS` baseado em força de sinal RSSI, ou `SNR` baseado na relação sinal/ruído).
+- **`COF`**: Filtro de corte de agudos em SSB (`On` = passa-faixa, `Off` = passa-baixa, `AUT` = ativa automaticamente quando `BW ≤ 2.0 kHz`).
+- **`RDS`**: Limite de tolerância a erros de RDS no FM (`0` = mais rigoroso/texto limpo; `3` = mais tolerante em sinais fracos).
+- **`BFO`**: Calibração permanente de offset do BFO em SSB (`-60` a `+60`, onde cada unidade equivale a `10 Hz` / `0,01 kHz`, permitindo calibrar de `-0,60 kHz` a `+0,60 kHz`).
+- **`Uni`**: Exibe ou oculta o sufixo `KHz`/`MHz` na tela (`On` / `Off`).
+- **`Sca`**: Ativa ou desativa a busca de estações no botão do encoder em AM/FM (`On` / `Off`).
+- **`CW`**: Escolhe a banda lateral base para recepção de telegrafia CW (`LSB` ou `USB`).
+
+### Descrição dos Elementos da Tela
+
+<p align="center">
+    <img src="img/ats20_display.png" alt="Elementos da tela do ATS_EX" />
+</p>
+
+1. **Modulação atual**: `AM`, `LSB`, `USB`, `CW` (de `153` a `30000` kHz) ou `FM` (`64` a `108` MHz). Exibe a letra `S` ao lado de `LSB`/`USB` quando o modo Sync está ativo.
+2. **Largura de Banda (`BW`)**: Filtro ativo no momento (`AUTO` disponível no FM; oculto em `CW`).
+3. **Frequência Atual**: Leitura principal em 7 segmentos (inclui casas decimais `.xx` kHz em `SSB`/`CW` e `.xx` MHz no `FM`).
+4. **Nome da Banda**: Indica a faixa atual (`LW`, `MW`, `SW`, `CB` ou `FM`).
+5. **Passo de Sintonia (`Step`)**: Incremento atual do encoder (quando aparece sem sufixo `k`/`M`, o valor está em **Hz**, ex.: `10`, `50`, `100`, `500`).
+6. **Unidade de Frequência**: `KHz` ou `MHz`.
+7. **Volume / Mute**: Nível de áudio (`0` a `63`) ou `M` quando silenciado.
+8. **Nível de Bateria**: Porcentagem da bateria (requer o mod de 2 resistores de `10 kΩ` no pino `A2`; fica oculto se não estiver instalado).
+
+---
+
+## Guia Rápido: Como Ouvir Radioamador (HF / SSB / CW) no ATS-20
+
+Por convenção internacional, transmissões de voz em HF utilizam **SSB (Banda Lateral Única)**:
+- **Abaixo de 10 MHz (`160m`, `80m`, `40m`)** → selecione **`LSB`** no botão **`MODE`**.
+- **Acima de 10 MHz (`20m`, `17m`, `15m`, `12m`, `10m` e PX `11m`)** → selecione **`USB`** no botão **`MODE`**.
+- **Código Morse (Telegrafia)** → selecione **`CW`** no botão **`MODE`** (geralmente nos primeiros `50 kHz` de cada faixa).
+
+| Faixa | Frequência (kHz) | Modulação de Voz | Dica de Horário / Propagação |
+| :--- | :--- | :---: | :--- |
+| **80 metros** | `3500` – `3800` kHz | **`LSB`** | Noite e madrugada (conversas regionais/nacionais) |
+| **40 metros** | `7000` – `7300` kHz | **`LSB`** | **A mais ativa no Brasil!** Fim de tarde, noite e manhã (`7050`–`7150` kHz) |
+| **20 metros** | `14000` – `14350` kHz | **`USB`** | Dia e fim de tarde (DX internacional, `14150`–`14300` kHz) |
+| **15 metros** | `21000` – `21450` kHz | **`USB`** | Período diurno |
+| **11 metros (PX/CB)** | `26965` – `27405` kHz | **`AM` / `LSB` / `USB`** | Dia todo (ex.: Canal 19 em `27185` kHz) |
+| **10 metros** | `28000` – `29700` kHz | **`USB`** | Dia com boa abertura solar (`28300`–`28600` kHz) |
+
+**Dicas práticas para recepção SSB limpa:**
+1. **Filtro (`BW`)**: Em **`LSB`/`USB`**, aperte **`BW`** e escolha **`2.2k`** ou **`1.8k`** para voz, ou **`0.5k` / `1.0k`** para **`CW`**.
+2. **Sintonia fina (`STEP`)**: Em SSB, aperte o **botão do encoder** (ou **`STEP`**) para alternar rapidamente entre **`1k`** (para procurar estações) e **`100` Hz / `50` Hz / `10` Hz** (para deixar a voz natural, sem timbre fino ou grave demais).
+3. **Antena**: Em `40m` e `80m`, prender um fio simples de **5 a 10 metros** na ponta da antena telescópica (esticado até uma janela ou varanda) melhora drasticamente a recepção.
+
+---
+
+## Como Fazer o Indicador de Bateria Funcionar (Mod no Pino `A2`)
+Você precisará de um ferro de solda e **dois resistores de `10 kΩ`**. Solde um resistor no polo negativo (GND) e o outro no polo positivo (`+`) da bateria de lítio. Solde a junção central entre os dois resistores diretamente no pino **`A2`** do Arduino/ATmega328P. Dessa forma, metade da tensão da bateria será aplicada ao pino `A2`, e o firmware **ATS_EX** passará a exibir automaticamente a porcentagem de carga no canto superior direito da tela.

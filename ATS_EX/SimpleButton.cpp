@@ -121,6 +121,7 @@ uint8_t SimpleButton::checkEvent(uint8_t (*_event)(uint8_t event, uint8_t pin))
         {
             ret = BUTTONEVENT_SHORTPRESS;
             state = BUTTONSTATE_RELEASE;
+            debounce = timeNow;
         }
         else
         {

@@ -32,6 +32,15 @@
     <ClInclude Include="defs.h">
       <Filter>Header Files\Globals and defs</Filter>
     </ClInclude>
+    <ClInclude Include="ReceiverState.h">
+      <Filter>Header Files\Globals and defs</Filter>
+    </ClInclude>
+    <ClInclude Include="RdsText.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="FlashAccess.h">
+      <Filter>Header Files\Globals and defs</Filter>
+    </ClInclude>
     <ClInclude Include="Utils.h">
       <Filter>Header Files\Globals and defs</Filter>
     </ClInclude>

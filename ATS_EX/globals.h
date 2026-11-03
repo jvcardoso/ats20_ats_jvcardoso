@@ -1,6 +1,9 @@
 #pragma once
 
-long g_storeTime = millis();
+#include "FlashAccess.h"
+
+uint32_t g_storeTime = 0;
+bool g_settingsDirty = false;
 
 bool g_voltagePinConnnected = false;
 bool g_ssbLoaded = false;
@@ -15,7 +18,8 @@ bool g_sMeterOn = false;
 bool g_displayOn = true;
 bool g_displayRDS = false;
 bool g_rdsSwitchPressed = false;
-bool g_seekStop = false;
+volatile bool g_seekStop = false;
+volatile bool g_seekInProgress = false;
 uint32_t g_lastAdjustmentTime = 0;
 
 uint8_t g_muteVolume = 0;
@@ -32,11 +36,10 @@ SimpleButton  btn_AGC(AGC_BUTTON);
 SimpleButton  btn_Step(STEP_BUTTON);
 SimpleButton  btn_Mode(MODE_SWITCH);
 
-volatile int g_encoderCount = 0;
+volatile int8_t g_encoderCount = 0;
 
 //Frequency tracking
 uint16_t g_currentFrequency;
-uint16_t g_previousFrequency;
 
 enum SettingType
 {
@@ -64,7 +67,6 @@ void doDeEmp(int8_t v = 0);
 void doSWUnits(int8_t v = 0);
 void doSSBSoftMuteMode(int8_t v = 0);
 void doCutoffFilter(int8_t v);
-void doCPUSpeed(int8_t v = 0);
 #if USE_RDS
 void doRDSErrorLevel(int8_t v);
 #endif
@@ -87,7 +89,6 @@ SettingsItem g_Settings[] =
     { "SW ", 0,  SettingType::Switch,       doSWUnits         },  //SW Units
     { "SSM", 1,  SettingType::Switch,       doSSBSoftMuteMode },  //SSB Soft Mute Mode
     { "COF", 0,  SettingType::SwitchAuto,   doCutoffFilter    },  //SSB Cutoff Filter
-    { "CPU", 0,  SettingType::Switch,       doCPUSpeed        },  //CPU Frequency
 #if USE_RDS
     { "RDS", 1,  SettingType::Num,          doRDSErrorLevel   },  //RDS ErrorLevel
 #endif
@@ -110,7 +111,6 @@ enum SettingsIndex
     SWUnits,
     SSM,
     CutoffFilter,
-    CPUSpeed,
 #if USE_RDS
     RDSError,
 #endif
@@ -159,7 +159,7 @@ Bandwidth g_bandwidthAM[] =
 };
 
 int8_t g_bwIndexFM = 0;
-char* g_bandwidthFM[] =
+const char* g_bandwidthFM[] =
 {
     "AUTO",
     "110k",
@@ -168,7 +168,7 @@ char* g_bandwidthFM[] =
     " 40k"
 };
 
-int g_tabStep[] =
+const uint16_t g_tabStep[] RADIO_PROGMEM =
 {
     // AM steps in KHz
     1,
@@ -189,9 +189,9 @@ int g_tabStep[] =
 uint8_t g_amTotalSteps = 7;
 uint8_t g_amTotalStepsSSB = 4; //Prevent large AM steps appear in SSB mode
 uint8_t g_ssbTotalSteps = 5;
-volatile int8_t g_stepIndex = 3;
+int8_t g_stepIndex = 3;
 
-int8_t g_tabStepFM[] =
+const uint8_t g_tabStepFM[] RADIO_PROGMEM =
 {
     5,  // 50 KHz
     10, // 100 KHz
@@ -226,13 +226,12 @@ enum RDSActiveInfo : uint8_t
     ProgramInfo
 };
 uint8_t g_rdsActiveInfo = RDSActiveInfo::StationName;
-char g_rdsPrevLen = 0;
-char* g_RDSCells[3];
+const char* g_RDSCells[3];
 #endif
 
 char _literal_EmptyLine[17] = "                ";
 
-char* bandTags[] =
+const char* bandTags[] =
 {
     "LW",
     "MW",
@@ -248,7 +247,7 @@ Band g_bandList[] =
     /* FM */ { 6400, 10800, 8400, 1, 0 },
 };
 
-uint16_t SWSubBands[] =
+const uint16_t SWSubBands[] RADIO_PROGMEM =
 {
     SW_LIMIT_LOW,  // 160 Meter
     3500, // 80 Meter
@@ -283,7 +282,7 @@ enum Modulations : uint8_t
     CW,
     FM
 };
-volatile uint8_t g_currentMode = FM;
+uint8_t g_currentMode = FM;
 const char* g_bandModeDesc[] = 
 { 
     "AM ",
@@ -292,7 +291,6 @@ const char* g_bandModeDesc[] =
     "CW ",
     "FM "
 };
-volatile uint8_t g_prevMode = FM;
 uint8_t g_seekDirection = 1;
 
 //Special logic for fast and responsive frequency surfing

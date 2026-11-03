@@ -1,0 +1,19 @@
+profiles:
+  nano:
+    notes: ATmega328P, old bootloader; confirm the receiver variant before uploading.
+    fqbn: arduino:avr:nano:cpu=atmega328old
+    platforms:
+      - platform: arduino:avr (1.8.8)
+    libraries:
+      - PU2CLR SI4735 (2.1.8)
+      - Tiny4kOLED (2.3.0)
+      - TinyOLED-Fonts (1.2.0)
+  uno:
+    notes: Compile target for the Uno receiver revision; hardware validation pending.
+    fqbn: arduino:avr:uno
+    platforms:
+      - platform: arduino:avr (1.8.8)
+    libraries:
+      - PU2CLR SI4735 (2.1.8)
+      - Tiny4kOLED (2.3.0)
+      - TinyOLED-Fonts (1.2.0)

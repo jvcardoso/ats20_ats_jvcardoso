@@ -12,6 +12,7 @@
 
 #include <SI4735.h>
 #include <EEPROM.h>
+#include <util/atomic.h>
 #include <Tiny4kOLED.h>
 #include <PixelOperatorBold.h> 
 
@@ -23,6 +24,10 @@
 #include "defs.h"
 #include "globals.h"
 #include "Utils.h"
+#include "ReceiverState.h"
+#include "RdsText.h"
+
+static_assert(STATE_SETTINGS_COUNT == SettingsIndex::SETTINGS_MAX, "Settings layout mismatch");
 
 void showStatus(bool cleanFreq = false);
 void applyBandConfiguration(bool extraSSBReset = false);
@@ -37,15 +42,15 @@ int getSteps()
     if (isSSB())
     {
         if (g_stepIndex >= g_amTotalSteps)
-            return g_tabStep[g_stepIndex];
+            return flashRead16(&g_tabStep[g_stepIndex]);
 
-        return g_tabStep[g_stepIndex] * 1000;
+        return flashRead16(&g_tabStep[g_stepIndex]) * 1000;
     }
 
     if (g_stepIndex >= g_amTotalSteps)
         g_stepIndex = 0;
 
-    return g_tabStep[g_stepIndex];
+    return flashRead16(&g_tabStep[g_stepIndex]);
 }
 
 int getLastStep()
@@ -56,11 +61,33 @@ int getLastStep()
     return g_amTotalSteps - 1;
 }
 
+int16_t ssbFrequencyKHzFloor()
+{
+    uint16_t shifted = uint16_t(g_currentBFO + STATE_MAX_BFO_HZ);
+    return int16_t(g_currentFrequency) + shifted / 1000 - STATE_MAX_BFO_KHZ;
+}
+
+int16_t ssbFrequencyKHzCeil()
+{
+    uint16_t shifted = uint16_t(g_currentBFO + STATE_MAX_BFO_HZ + 999);
+    return int16_t(g_currentFrequency) + shifted / 1000 - STATE_MAX_BFO_KHZ;
+}
+
+uint16_t ssbRoundedFrequencyKHz()
+{
+    uint16_t shifted = uint16_t(g_currentBFO + STATE_MAX_BFO_HZ + 500);
+    return g_currentFrequency + shifted / 1000 - STATE_MAX_BFO_KHZ;
+}
+
+uint16_t amSeekSpacing()
+{
+    uint16_t step = g_stepIndex >= g_amTotalSteps ? 1 : flashRead16(&g_tabStep[g_stepIndex]);
+    return step > 10 ? 10 : step;
+}
+
 // --------------------------
 // ------- Main logic -------
 // --------------------------
-
-#define APP_VERSION 118
 
 //Initialize controller
 void setup()
@@ -78,11 +105,12 @@ void setup()
     oled.on();
     oled.setFont(DEFAULT_FONT);
 
+    bool resetSettings = !(PINC & (1 << (ENCODER_BUTTON - 14)));
+
     //Don't use digitalRead()
     //Registers save us more space
-    if (!(PINC & (1 << (ENCODER_BUTTON - 14))))
+    if (resetSettings)
     {
-        saveAllReceiverInformation();
         oled.print("  EEPROM RESET");
         oled.setCursor(0, 2);
         for (uint8_t i = 0; i < 16; i++)
@@ -94,9 +122,9 @@ void setup()
     else
     {
         oledPrint(" ATS-20 RECEIVER", 0, 0, DEFAULT_FONT, true);
-        oledPrint("ATS_EX v1.18", 16, 2);
-        oledPrint("Goshante 2024", 12, 4);
-        oledPrint("Best firmware", 12, 6);
+        oledPrint("ATS_EX v1.18-r3", 4, 2);
+        oledPrint("JVCARDOSO 2026", 8, 4);
+        oledPrint("Custom firmware", 4, 6);
         delay(2000);
     }
     oled.clear();
@@ -110,22 +138,18 @@ void setup()
 
     delay(500);
 
-    //Load settings from EEPROM
-    if (EEPROM.read(EEPROM_VERSION_ADDRESS) == APP_VERSION && EEPROM.read(EEPROM_APP_ID_ADDRESS) == EEPROM_APP_ID)
-        readAllReceiverInformation();
-    else
-        saveAllReceiverInformation();
+    bool restored = !resetSettings && readAllReceiverInformation();
+    if (restored && isSSB())
+        loadSSBPatch();
 
-    //Clock speed configuration
-    noInterrupts(); //cli()
-    CLKPR = 0x80;   //Allow edit CLKPR register
-    CLKPR = g_Settings[SettingsIndex::CPUSpeed].param;
-    interrupts();   //sei()
+    // Keep the AVR clock at its nominal rate so millis() and delay() stay accurate.
 
-    //Initialize current band settings and read frequency
     applyBandConfiguration();
-    g_currentFrequency = g_previousFrequency = g_si4735.getFrequency();
     g_si4735.setVolume(g_volume);
+    oled.setContrast(uint8_t(g_Settings[SettingsIndex::Brightness].param) * 2);
+    if (!restored)
+        saveAllReceiverInformation();
+    g_settingsDirty = false;
 
     //Draw main screen
     oled.clear();
@@ -141,6 +165,7 @@ uint8_t volumeEvent(uint8_t event, uint8_t pin)
             if ((BUTTONEVENT_SHORTPRESS != event) || (VOLUME_BUTTON == pin))
                 doVolume(1);
         }
+        return event;
     }
 
     if (!g_muteVolume)
@@ -172,23 +197,11 @@ uint8_t volumeEvent(uint8_t event, uint8_t pin)
     return event;
 }
 
-uint8_t simpleEvent(uint8_t event, uint8_t pin)
+uint8_t simpleEvent(uint8_t event, uint8_t)
 {
     if (BUTTONEVENT_FIRSTLONGPRESS == event)
         event = BUTTONEVENT_SHORTPRESS;
     return event;
-}
-
-//This looks like it's better to remove them and use only simpleEvent
-//But it's a part of a hack that allows us to save more flash image size
-uint8_t stepEvent(uint8_t event, uint8_t pin)
-{
-    return simpleEvent(event, pin);
-}
-
-uint8_t agcEvent(uint8_t event, uint8_t pin)
-{
-    return simpleEvent(event, pin);
 }
 
 uint8_t bandEvent(uint8_t event, uint8_t pin)
@@ -232,8 +245,11 @@ void rotaryEncoder()
     uint8_t encoderStatus = g_encoder.process();
     if (encoderStatus)
     {
-        g_encoderCount = (encoderStatus == DIR_CW) ? 1 : -1;
-        g_seekStop = true;
+        int8_t direction = encoderStatus == DIR_CW ? 1 : -1;
+        if (g_seekInProgress)
+            g_seekStop = true;
+        else if ((direction > 0 && g_encoderCount < 127) || (direction < 0 && g_encoderCount > -127))
+            g_encoderCount += direction;
     }
 }
 
@@ -241,99 +257,75 @@ void rotaryEncoder()
 void updateSSBCutoffFilter()
 {
     // Auto mode: If SSB bandwidth 2 KHz or lower - it's better to enable cutoff filter
-    if (g_Settings[SettingsIndex::CutoffFilter].param == 0 || g_currentMode == CW)
+    if (g_currentMode == CW)
+        g_si4735.setSSBSidebandCutoffFilter(0);
+    else if (g_Settings[SettingsIndex::CutoffFilter].param == 0)
         g_si4735.setSSBSidebandCutoffFilter((g_bandwidthSSB[g_bwIndexSSB].idx == 0 || g_bandwidthSSB[g_bwIndexSSB].idx == 4 || g_bandwidthSSB[g_bwIndexSSB].idx == 5) ? 0 : 1);
     else
         g_si4735.setSSBSidebandCutoffFilter(g_Settings[SettingsIndex::CutoffFilter].param - 1);
 }
 
-//EEPROM Save
+// Copy only validated snapshots into the live receiver state.
 void saveAllReceiverInformation()
 {
-    uint8_t addr = EEPROM_DATA_START_ADDRESS;
-    EEPROM.update(EEPROM_VERSION_ADDRESS, APP_VERSION);
-    EEPROM.update(EEPROM_APP_ID_ADDRESS, EEPROM_APP_ID);
-
-    EEPROM.update(addr++, g_muteVolume > 0 ? g_muteVolume : g_si4735.getVolume());
-    EEPROM.update(addr++, g_bandIndex);
-    EEPROM.update(addr++, g_currentMode);
-    EEPROM.update(addr++, g_currentBFO >> 8);
-    EEPROM.update(addr++, g_currentBFO & 0XFF);
-    EEPROM.update(addr++, g_FMStepIndex);
-    EEPROM.update(addr++, g_prevMode); 
-    EEPROM.update(addr++, g_bwIndexSSB);
-
-    for (uint8_t i = 0; i <= g_lastBand; i++)
+    ReceiverState state;
+    state.volume = g_muteVolume ? g_muteVolume : g_si4735.getVolume();
+    state.band = g_bandIndex;
+    state.mode = g_currentMode;
+    state.ssbBandwidth = g_bwIndexSSB;
+    state.bfo = isSSB() ? g_currentBFO : 0;
+    for (uint8_t i = 0; i < 4; i++)
     {
-        EEPROM.update(addr++, (g_bandList[i].currentFreq >> 8));
-        EEPROM.update(addr++, (g_bandList[i].currentFreq & 0xFF));
-        EEPROM.update(addr++, ((i != FM_BAND_TYPE && g_bandList[i].currentStepIdx >= g_amTotalSteps) ? 0 : g_bandList[i].currentStepIdx));
-        EEPROM.update(addr++, g_bandList[i].bandwidthIdx);
+        state.bands[i].frequency = g_bandList[i].currentFreq;
+        state.bands[i].step = g_bandList[i].currentStepIdx;
+        state.bands[i].bandwidth = g_bandList[i].bandwidthIdx;
     }
-
     for (uint8_t i = 0; i < SettingsIndex::SETTINGS_MAX; i++)
-        EEPROM.update(addr++, g_Settings[i].param);
+        state.settings[i] = g_Settings[i].param;
+    storeReceiverState(EEPROM, state);
+    g_settingsDirty = false;
 }
 
-//EEPROM Load
-void readAllReceiverInformation()
+bool readAllReceiverInformation()
 {
-    uint8_t addr = EEPROM_DATA_START_ADDRESS;
-    int8_t bwIdx;
-    g_volume = EEPROM.read(addr++);
-    g_bandIndex = EEPROM.read(addr++);
-    g_currentMode = EEPROM.read(addr++);
-    g_currentBFO = (EEPROM.read(addr++) << 8) | EEPROM.read(addr++);
-    g_FMStepIndex = EEPROM.read(addr++);
-    g_prevMode = EEPROM.read(addr++);
-    g_bwIndexSSB = EEPROM.read(addr++);
-
-    for (uint8_t i = 0; i <= g_lastBand; i++)
+    ReceiverState state;
+    if (!loadReceiverState(EEPROM, state))
+        return false;
+    g_volume = state.volume;
+    g_bandIndex = state.band;
+    g_currentMode = state.mode;
+    g_bwIndexSSB = state.ssbBandwidth;
+    g_currentBFO = state.bfo;
+    for (uint8_t i = 0; i < 4; i++)
     {
-        g_bandList[i].currentFreq = (EEPROM.read(addr++) << 8) | EEPROM.read(addr++);
-        g_bandList[i].currentStepIdx = EEPROM.read(addr++);
-        g_bandList[i].bandwidthIdx = EEPROM.read(addr++);
+        g_bandList[i].currentFreq = state.bands[i].frequency;
+        g_bandList[i].currentStepIdx = state.bands[i].step;
+        g_bandList[i].bandwidthIdx = state.bands[i].bandwidth;
     }
-
     for (uint8_t i = 0; i < SettingsIndex::SETTINGS_MAX; i++)
-        g_Settings[i].param = EEPROM.read(addr++);
-
-    oled.setContrast(uint8_t(g_Settings[SettingsIndex::Brightness].param) * 2);
-
-    g_previousFrequency = g_currentFrequency = g_bandList[g_bandIndex].currentFreq;
-    if (g_bandIndex == FM_BAND_TYPE)
-        g_FMStepIndex = g_bandList[g_bandIndex].currentStepIdx;
-    else
-        g_stepIndex = g_bandList[g_bandIndex].currentStepIdx;
-    bwIdx = g_bandList[g_bandIndex].bandwidthIdx;
-    if (g_stepIndex >= g_amTotalSteps)
-        g_stepIndex = 0;
-
-    if (isSSB())
-    {
-        loadSSBPatch();
-        g_si4735.setSSBAudioBandwidth(g_bandwidthSSB[g_bwIndexSSB].idx);
-        updateSSBCutoffFilter();
-    }
-    else if (g_currentMode == AM)
-    {
-        g_bwIndexAM = bwIdx;
-        g_si4735.setBandwidth(g_bandwidthAM[g_bwIndexAM].idx, 1);
-    }
-    else
-    {
-        g_bwIndexFM = bwIdx;
-        g_si4735.setFmBandwidth(g_bwIndexFM);
-    }
-
-    applyBandConfiguration();
+        g_Settings[i].param = state.settings[i];
+    return true;
 }
 
-//For saving features
 void resetEepromDelay()
 {
     g_storeTime = millis();
-    g_previousFrequency = 0;
+    g_settingsDirty = true;
+}
+
+// Consume one signed step, keeping any events arriving during processing.
+int8_t takeEncoderStep()
+{
+    int8_t step = 0;
+    ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
+    {
+        if (g_encoderCount)
+        {
+            step = g_encoderCount > 0 ? 1 : -1;
+            g_encoderCount -= step;
+        }
+    }
+    return step;
 }
 
 //Draw frequency. 
@@ -348,7 +340,7 @@ void showFrequency(bool cleanDisplay = false)
     char freqDisplay[7];
     char ssbSuffix[4];
     static uint8_t prevLen = 0;
-    uint16_t khzBFO, tailBFO;
+    uint16_t khzBFO = 0, tailBFO = 0;
     uint8_t off = (isSSB() ? -5 : 4) + 8;
 
     unit[0] = 'K';
@@ -389,7 +381,6 @@ void showFrequency(bool cleanDisplay = false)
     uint8_t len = isSSB() ? ilen(khzBFO) : ilen(g_currentFrequency);
     if (cleanDisplay)
     {
-        oled.setCursor(0, 3);
         oledPrint("/////////", 0, 3, FONT14X24SEVENSEG); // This character is an empty space in my seven seg font.
     }
     else if (isSSB() && len > prevLen && len == 5)
@@ -407,7 +398,7 @@ void showFrequency(bool cleanDisplay = false)
             oledPrint("/");
     }
 
-    if (g_Settings[SettingsIndex::UnitsShow].param == 1 && (!isSSB() || isSSB() && len < 5))
+    if (g_Settings[SettingsIndex::UnitsShow].param == 1 && (!isSSB() || len < 5))
         oledPrint(unit, 102, 4, DEFAULT_FONT);
         
     prevLen = len;
@@ -417,18 +408,8 @@ void showFrequency(bool cleanDisplay = false)
 void showFrequencySeek(uint16_t freq)
 {
     g_currentFrequency = freq;
-    delay(10);
-    if (g_currentMode == FM)
-    {
-        //Fix random 10th KHz fraction
-        freq = (freq / 10) * 10;
-        g_currentFrequency = freq;
-        g_si4735.setFrequency(g_currentFrequency);
-    }
-    else
-        g_currentFrequency = g_si4735.getFrequency();
-
     g_bandList[g_bandIndex].currentFreq = g_currentFrequency;
+    resetEepromDelay();
     showFrequency();
 }
 
@@ -439,6 +420,11 @@ bool checkStopSeeking()
 
 void doSeek()
 {
+    ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
+    {
+        g_seekStop = false;
+        g_seekInProgress = true;
+    }
     if (g_seekDirection)
         g_si4735.frequencyUp();
     else
@@ -448,8 +434,13 @@ void doSeek()
     if (g_displayRDS)
         oledPrint(_literal_EmptyLine, 0, 6, DEFAULT_FONT);
 #endif
-    g_seekStop = false;
     g_si4735.seekStationProgress(showFrequencySeek, checkStopSeeking, g_seekDirection);
+    // PU2CLR 2.1.8 getFrequency() sends TUNE_STATUS with CANCEL=1.
+    showFrequencySeek(g_si4735.getFrequency());
+    ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
+    {
+        g_seekInProgress = false;
+    }
 }
 
 //Update and draw main screen UI. 
@@ -569,21 +560,6 @@ void SettingParamToUI(char* buf, uint8_t idx)
             buf[1] = 'S';
             buf[2] = 'B';
         }
-        else if (idx == SettingsIndex::CPUSpeed)
-        {
-            if (param == 0)
-            {
-                buf[0] = '1';
-                buf[1] = '0';
-                buf[2] = '0';
-            }
-            else
-            {
-                buf[0] = '5';
-                buf[1] = '0';
-                buf[2] = '%';
-            }
-        }
         else
         {
             if (param == 0)
@@ -631,9 +607,9 @@ void showSettingsTitle()
 {
     oledPrint("   SETTINGS  ", 0, 0, DEFAULT_FONT, true);
     oled.invertOutput(true);
-    oled.print(uint8_t(g_SettingsPage));
+    oled.write('0' + g_SettingsPage);
     oled.print("/");
-    oled.print(uint8_t(g_SettingsMaxPages));
+    oled.write('0' + g_SettingsMaxPages);
     oled.invertOutput(false);
 }
 
@@ -686,7 +662,11 @@ void showBandTag()
     if (g_sMeterOn || g_displayRDS)
         return;
 
-    oledPrint((g_currentFrequency >= CB_LIMIT_LOW && g_currentFrequency < CB_LIMIT_HIGH)? "CB" : bandTags[g_bandIndex], 0, 6, DEFAULT_FONT, g_cmdBand && g_currentMode != FM);
+    int16_t effectiveFrequencyKHz = isSSB()
+        ? ssbFrequencyKHzFloor() : int16_t(g_currentFrequency);
+    bool isCB = effectiveFrequencyKHz >= CB_LIMIT_LOW
+        && effectiveFrequencyKHz < CB_LIMIT_HIGH;
+    oledPrint(isCB ? "CB" : bandTags[g_bandIndex], 0, 6, DEFAULT_FONT, g_cmdBand && g_currentMode != FM);
 }
 
 //Draw volume level
@@ -721,7 +701,7 @@ void showCharge(bool forceShow)
     //This values represent voltage values in ATMega328p analog units with reference voltage 3.30v
     //Voltage pin reads voltage from voltage divider, so it have to be 1/2 of Li-Ion battery voltage
     constexpr const uint8_t rows = 10;
-    const uint16_t dischargeTable[rows][2] =
+    static const uint16_t dischargeTable[rows][2] RADIO_PROGMEM =
     {
         { 643, 100 },  //4.15v
         { 620, 95  },  //4.05v
@@ -737,20 +717,20 @@ void showCharge(bool forceShow)
 
     auto getBatteryPercentage = [&](uint16_t currentSamples) -> uint8_t
     {
-        if (currentSamples >= dischargeTable[0][0]) 
+        if (currentSamples >= flashRead16(&dischargeTable[0][0]))
             return 100;
 
-        if (currentSamples <= dischargeTable[rows - 1][0]) 
+        if (currentSamples <= flashRead16(&dischargeTable[rows - 1][0]))
             return 0;
 
         for (uint8_t i = 0; i < rows - 1; ++i) 
         {
-            if (currentSamples >= dischargeTable[i + 1][0] && currentSamples <= dischargeTable[i][0]) 
+            if (currentSamples >= flashRead16(&dischargeTable[i + 1][0]) && currentSamples <= flashRead16(&dischargeTable[i][0]))
             {
-                uint16_t voltageDiff = dischargeTable[i][0] - dischargeTable[i + 1][0];
-                uint16_t percentageDiff = dischargeTable[i][1] - dischargeTable[i + 1][1];
-                uint16_t voltageOffset = currentSamples - dischargeTable[i + 1][0];
-                return dischargeTable[i + 1][1] + (percentageDiff * voltageOffset + voltageDiff / 2) / voltageDiff;
+                uint16_t voltageDiff = flashRead16(&dischargeTable[i][0]) - flashRead16(&dischargeTable[i + 1][0]);
+                uint16_t percentageDiff = flashRead16(&dischargeTable[i][1]) - flashRead16(&dischargeTable[i + 1][1]);
+                uint16_t voltageOffset = currentSamples - flashRead16(&dischargeTable[i + 1][0]);
+                return flashRead16(&dischargeTable[i + 1][1]) + (percentageDiff * voltageOffset + voltageDiff / 2) / voltageDiff;
             }
         }
 
@@ -758,11 +738,15 @@ void showCharge(bool forceShow)
     };
 
     static uint32_t lastChargeShow = 0;
-    static int16_t averageSamples = 0;
+    static int16_t averageSamples = -1; // Outside the ADC range, including a valid zero sample.
 
     int sample = analogRead(BATTERY_VOLTAGE_PIN);
     if (sample < 0)
         sample = averageSamples;
+    if (averageSamples < 0)
+    {
+        averageSamples = sample;
+    }
 
     if ((millis() - lastChargeShow) > 10000 || forceShow)
     {
@@ -788,70 +772,41 @@ void showCharge(bool forceShow)
 #if USE_RDS
 void showRDS()
 {
-    static uint16_t lastUpdatedFreq = 0;
-    static uint32_t lastUpdatedTime = millis();
-    static bool succeed = false;
-
+    static uint16_t lastFrequency = 0;
+    static uint32_t lastPoll = 0;
     if (g_currentMode != FM || !g_displayRDS || g_settingsActive)
-    { 
-        lastUpdatedFreq = 0;
-        g_rdsPrevLen = 0;
-        succeed = false;
-        g_rdsActiveInfo = 0;
-        return;
-    }
-
-    if (millis() - lastUpdatedTime > 300)
-        succeed = false;
-
-    if (lastUpdatedFreq != g_currentFrequency || g_rdsSwitchPressed)
     {
-        if (g_rdsSwitchPressed)
-        {
-            g_rdsActiveInfo++;
-            if (g_rdsActiveInfo > RDSActiveInfo::ProgramInfo)
-                g_rdsActiveInfo = RDSActiveInfo::StationName;
-        }
-        else
-        {
-            g_rdsActiveInfo = RDSActiveInfo::StationName;
-            succeed = false;
-        }
-        g_rdsPrevLen = 0;
-        oledPrint(_literal_EmptyLine, 0, 6, DEFAULT_FONT);
+        lastFrequency = 0;
+        g_rdsSwitchPressed = false;
+        return;
     }
-    lastUpdatedFreq = g_currentFrequency;
 
-    if (!succeed)
-        g_si4735.getRdsStatus();
-
-    if (!succeed && g_si4735.getRdsReceived() && g_si4735.getRdsSync() && g_si4735.getNumRdsFifoUsed() > 1)
+    bool changed = lastFrequency != g_currentFrequency;
+    if (changed)
     {
-        g_RDSCells[RDSActiveInfo::StationName] = g_si4735.getRdsStationName();
-        g_RDSCells[RDSActiveInfo::StationInfo] = g_si4735.getRdsStationInformation();
-        g_RDSCells[RDSActiveInfo::ProgramInfo] = g_si4735.getRdsProgramInformation();
-        g_RDSCells[RDSActiveInfo::StationInfo][17] = '\0';
-        g_RDSCells[RDSActiveInfo::ProgramInfo][17] = '\0';
-        succeed = true;
-        lastUpdatedTime = millis();
+        memset(g_RDSCells, 0, sizeof(g_RDSCells));
+        g_rdsActiveInfo = RDSActiveInfo::StationName;
+        lastFrequency = g_currentFrequency;
     }
-    else if (!g_rdsSwitchPressed && succeed)
+    if (!changed && !g_rdsSwitchPressed && millis() - lastPoll < 300)
         return;
-
-    uint8_t len = strlen8(g_RDSCells[g_rdsActiveInfo]);
-
-    if (len == 0 && !g_rdsSwitchPressed)
-        return;
-
-    oledPrint(g_RDSCells[g_rdsActiveInfo], 0, 6, DEFAULT_FONT);
-    
-    uint8_t toPrint = len == 0 ? 3 : (len < g_rdsPrevLen ? min(g_rdsPrevLen - len, 16 - len) : 0);
-    char printChar = len == 0 ? '.' : ' ';
-    for (uint8_t i = 0; i < toPrint; i++) 
-        oled.print(printChar);
-
-    g_rdsPrevLen = len;
+    if (g_rdsSwitchPressed)
+        g_rdsActiveInfo = (g_rdsActiveInfo + 1) % 3;
     g_rdsSwitchPressed = false;
+    lastPoll = millis();
+
+    g_si4735.getRdsStatus();
+    if (g_si4735.getRdsReceived() && g_si4735.getRdsSync() && g_si4735.getNumRdsFifoUsed() > 1)
+    {
+        const char* cells[] = {g_si4735.getRdsStationName(),
+            g_si4735.getRdsStationInformation(), g_si4735.getRdsProgramInformation()};
+        for (uint8_t i = 0; i < 3; i++)
+            if (cells[i])
+                g_RDSCells[i] = cells[i];
+    }
+    char line[17];
+    formatRdsLine(line, g_RDSCells[g_rdsActiveInfo]);
+    oledPrint(line, 0, 6, DEFAULT_FONT);
 }
 #endif
 
@@ -864,7 +819,7 @@ void showStep()
     char buf[5];
     if (g_currentMode == FM)
     {
-        if (g_tabStepFM[g_FMStepIndex] == 100)
+        if (flashRead8(&g_tabStepFM[g_FMStepIndex]) == 100)
         {
             buf[0] = ' ';
             buf[1] = ' ';
@@ -874,14 +829,14 @@ void showStep()
         }
         else
         {
-            convertToChar(buf, g_tabStepFM[g_FMStepIndex] * 10, 3);
+            convertToChar(buf, flashRead8(&g_tabStepFM[g_FMStepIndex]) * 10, 3);
             buf[3] = 'k';
             buf[4] = '\0';
         }
     }
     else
     {
-        if (g_tabStep[g_stepIndex] == 1000)
+        if (flashRead16(&g_tabStep[g_stepIndex]) == 1000)
         {
             buf[0] = ' ';
             buf[1] = ' ';
@@ -890,10 +845,10 @@ void showStep()
             buf[4] = 0x0;
         }
         else if (isSSB() && g_stepIndex >= g_amTotalSteps)
-            convertToChar(buf, g_tabStep[g_stepIndex], 4);
+            convertToChar(buf, flashRead16(&g_tabStep[g_stepIndex]), 4);
         else
         {
-            convertToChar(buf, g_tabStep[g_stepIndex], 3);
+            convertToChar(buf, flashRead16(&g_tabStep[g_stepIndex]), 3);
             buf[3] = 'k';
             buf[4] = '\0';
         }
@@ -927,20 +882,20 @@ void showSMeter()
 //Draw bandwidth (Ignored for CW mode)
 void showBandwidth()
 {
-    char* bw;
+    const char* bw;
     if (isSSB())
     {
-        bw = (char*)g_bandwidthSSB[g_bwIndexSSB].desc;
+        bw = g_bandwidthSSB[g_bwIndexSSB].desc;
         if (g_currentMode == CW)
             bw = "    ";
     }
     else if (g_currentMode == AM)
     {
-        bw = (char*)g_bandwidthAM[g_bwIndexAM].desc;
+        bw = g_bandwidthAM[g_bwIndexAM].desc;
     }
     else
     {
-        bw = (char*)g_bandwidthFM[g_bwIndexFM];
+        bw = g_bandwidthFM[g_bwIndexFM];
     }
 
     oledPrint(bw, 45, 0, DEFAULT_FONT, g_cmdBw);
@@ -948,17 +903,17 @@ void showBandwidth()
 
 uint16_t getNextSWSuBband(bool up)
 {
-    uint16_t freq = g_currentFrequency;
-    if (isSSB())
-        freq += g_currentBFO / 1000;
+    int16_t frequencyKHz = isSSB()
+        ? (up ? ssbFrequencyKHzFloor() : ssbFrequencyKHzCeil())
+        : int16_t(g_currentFrequency);
 
     for (uint8_t i = 0; i < g_SWSubBandCount; i++)
     {
         uint8_t n = g_SWSubBandCount - 1 - i;
-        if (!up && SWSubBands[n] < freq)
-            return SWSubBands[n];
-        else if (up && SWSubBands[i] > freq)
-            return SWSubBands[i];
+        if (!up && int16_t(flashRead16(&SWSubBands[n])) < frequencyKHz)
+            return flashRead16(&SWSubBands[n]);
+        else if (up && int16_t(flashRead16(&SWSubBands[i])) > frequencyKHz)
+            return flashRead16(&SWSubBands[i]);
     }
 
     return 0;
@@ -971,6 +926,8 @@ void bandSwitch(bool up)
     if (g_bandIndex == SW_BAND_TYPE && nextSW != 0)
     {
         g_currentFrequency = nextSW;
+        g_bandList[g_bandIndex].currentFreq = nextSW;
+        resetEepromDelay();
 
         g_currentBFO = 0;
         if (isSSB())
@@ -982,6 +939,9 @@ void bandSwitch(bool up)
     }
     else
     {
+        if (isSSB())
+            g_bandList[g_bandIndex].currentFreq = ssbRoundedFrequencyKHz();
+
         if (g_currentMode == FM)
             g_bandList[g_bandIndex].currentStepIdx = g_FMStepIndex;
         else
@@ -1009,7 +969,7 @@ void bandSwitch(bool up)
         }
 
 #if USE_RDS
-        if (g_displayRDS && g_currentMode != FM)
+        if (g_displayRDS)
         {
             g_displayRDS = false;
             oledPrint(_literal_EmptyLine, 0, 6, DEFAULT_FONT);
@@ -1038,7 +998,6 @@ void loadSSBPatch()
     g_si4735.setSSBConfig(g_bandwidthSSB[g_bwIndexSSB].idx, 1, 0, 1, 0, 1);
     g_si4735.setI2CStandardMode();
     g_ssbLoaded = true;
-    g_stepIndex = 0;
 }
 
 #if USE_RDS
@@ -1049,8 +1008,18 @@ void setRDSConfig(uint8_t bias)
 #endif
 
 //Update receiver settings after changing band and modulation
-void applyBandConfiguration(bool extraSSBReset = false)
+void applyBandConfiguration(bool extraSSBReset)
 {
+    if (g_bandIndex == FM_BAND_TYPE)
+        g_currentMode = FM;
+    else if (!g_ssbLoaded)
+        g_currentMode = AM;
+    int8_t& step = g_bandList[g_bandIndex].currentStepIdx;
+    if (!validStep(step, g_bandIndex, g_currentMode))
+        step = 0;
+    g_stepIndex = step;
+    uint16_t frequency = g_bandList[g_bandIndex].currentFreq;
+
     g_si4735.setTuneFrequencyAntennaCapacitor(uint16_t(g_bandIndex == SW_BAND_TYPE));
     if (g_bandIndex == FM_BAND_TYPE)
     {
@@ -1058,10 +1027,10 @@ void applyBandConfiguration(bool extraSSBReset = false)
         g_si4735.setTuneFrequencyAntennaCapacitor(0);
         g_si4735.setFM(g_bandList[g_bandIndex].minimumFreq,
             g_bandList[g_bandIndex].maximumFreq,
-            g_bandList[g_bandIndex].currentFreq,
-            g_tabStepFM[g_bandList[g_bandIndex].currentStepIdx]);
+            frequency,
+            flashRead8(&g_tabStepFM[g_bandList[g_bandIndex].currentStepIdx]));
         g_si4735.setSeekFmLimits(g_bandList[g_bandIndex].minimumFreq, g_bandList[g_bandIndex].maximumFreq);
-        g_si4735.setSeekFmSpacing(1);
+        g_si4735.setSeekFmSpacing(FM_SEEK_SPACING);
         g_ssbLoaded = false;
 #if USE_RDS
         setRDSConfig(g_Settings[SettingsIndex::RDSError].param);
@@ -1083,7 +1052,6 @@ void applyBandConfiguration(bool extraSSBReset = false)
 
         if (g_ssbLoaded)
         {
-            g_currentBFO = 0;
             if (extraSSBReset)
                 loadSSBPatch();
 
@@ -1091,8 +1059,8 @@ void applyBandConfiguration(bool extraSSBReset = false)
             g_si4735.setSSBAutomaticVolumeControl(g_Settings[SettingsIndex::SVC].param);
             g_si4735.setSSB(minFreq,
                 maxFreq,
-                g_bandList[g_bandIndex].currentFreq,
-                g_bandList[g_bandIndex].currentStepIdx >= g_amTotalSteps ? 0 : g_tabStep[g_bandList[g_bandIndex].currentStepIdx],
+                frequency,
+                g_bandList[g_bandIndex].currentStepIdx >= g_amTotalSteps ? 0 : flashRead16(&g_tabStep[g_bandList[g_bandIndex].currentStepIdx]),
                 g_currentMode == CW ? g_Settings[SettingsIndex::CWSwitch].param + 1 : g_currentMode);
             updateSSBCutoffFilter();
             g_si4735.setSSBAutomaticVolumeControl(g_Settings[SettingsIndex::SVC].param);
@@ -1108,8 +1076,8 @@ void applyBandConfiguration(bool extraSSBReset = false)
             g_currentMode = AM;
             g_si4735.setAM(minFreq,
                 maxFreq,
-                g_bandList[g_bandIndex].currentFreq,
-                g_bandList[g_bandIndex].currentStepIdx >= g_amTotalSteps ? 0 : g_tabStep[g_bandList[g_bandIndex].currentStepIdx]);
+                frequency,
+                g_bandList[g_bandIndex].currentStepIdx >= g_amTotalSteps ? 0 : flashRead16(&g_tabStep[g_bandList[g_bandIndex].currentStepIdx]));
             g_si4735.setAmSoftMuteMaxAttenuation(g_Settings[SettingsIndex::SoftMute].param);
             g_bwIndexAM = g_bandList[g_bandIndex].bandwidthIdx;
             g_si4735.setBandwidth(g_bandwidthAM[g_bwIndexAM].idx, 1);
@@ -1118,18 +1086,14 @@ void applyBandConfiguration(bool extraSSBReset = false)
         agcSetFunc();
         g_si4735.setAvcAmMaxGain(g_Settings[SettingsIndex::AutoVolControl].param);
         g_si4735.setSeekAmLimits(minFreq, maxFreq);
-        g_si4735.setSeekAmSpacing((g_bandList[g_bandIndex].currentStepIdx >= g_amTotalSteps) ? 1 : g_tabStep[g_bandList[g_bandIndex].currentStepIdx]);
+        g_si4735.setSeekAmSpacing(amSeekSpacing());
     }
 
-    g_currentFrequency = g_bandList[g_bandIndex].currentFreq;
+    g_currentFrequency = frequency;
     if (g_currentMode == FM)
         g_FMStepIndex = g_bandList[g_bandIndex].currentStepIdx;
     else
         g_stepIndex = g_bandList[g_bandIndex].currentStepIdx;
-
-    if ((g_bandIndex == LW_BAND_TYPE || g_bandIndex == MW_BAND_TYPE)
-        && g_stepIndex > g_amTotalStepsSSB)
-        g_stepIndex = g_amTotalStepsSSB;
 
     if (!g_settingsActive)
         showStatus(true);
@@ -1147,39 +1111,26 @@ void doStep(int8_t v)
         else if (g_FMStepIndex < 0)
             g_FMStepIndex = g_lastStepFM;
 
-        g_si4735.setFrequencyStep(g_tabStepFM[g_FMStepIndex]);
+        g_si4735.setFrequencyStep(flashRead8(&g_tabStepFM[g_FMStepIndex]));
         g_bandList[g_bandIndex].currentStepIdx = g_FMStepIndex;
-        g_si4735.setSeekFmSpacing(1);
+        g_si4735.setSeekFmSpacing(FM_SEEK_SPACING);
         showStep();
     }
     else
     {
-        g_stepIndex = (v == 1) ? g_stepIndex + 1 : g_stepIndex - 1;
-        if (g_stepIndex > getLastStep())
-            g_stepIndex = 0;
-        else if (g_stepIndex < 0)
-            g_stepIndex = getLastStep();
-
-        //SSB Step limit
-        else if (isSSB() && g_stepIndex >= g_amTotalStepsSSB && g_stepIndex < g_amTotalSteps)
-            g_stepIndex = v == 1 ? g_amTotalSteps : g_amTotalStepsSSB - 1;
-        
-        //LW/MW Step limit
-        else if ((g_bandIndex == LW_BAND_TYPE || g_bandIndex == MW_BAND_TYPE)
-            && v == 1 && g_stepIndex > g_amTotalStepsSSB && g_stepIndex < g_amTotalSteps)
-            g_stepIndex = g_amTotalSteps;
-        else if ((g_bandIndex == LW_BAND_TYPE || g_bandIndex == MW_BAND_TYPE)
-            && v != 1 && g_stepIndex > g_amTotalStepsSSB && g_stepIndex < g_amTotalSteps)
-            g_stepIndex = g_amTotalStepsSSB;
-
-        if (!isSSB() || isSSB() && g_stepIndex < g_amTotalSteps)
+        do
         {
-            g_si4735.setFrequencyStep(g_tabStep[g_stepIndex]);
-            g_bandList[g_bandIndex].currentStepIdx = g_stepIndex;
-        }
-
+            g_stepIndex += v;
+            if (g_stepIndex > getLastStep())
+                g_stepIndex = 0;
+            else if (g_stepIndex < 0)
+                g_stepIndex = getLastStep();
+        } while (!validStep(g_stepIndex, g_bandIndex, g_currentMode));
+        g_bandList[g_bandIndex].currentStepIdx = g_stepIndex;
+        if (g_stepIndex < g_amTotalSteps)
+            g_si4735.setFrequencyStep(flashRead16(&g_tabStep[g_stepIndex]));
         if (!isSSB())
-            g_si4735.setSeekAmSpacing((g_bandList[g_bandIndex].currentStepIdx >= g_amTotalSteps) ? 1 : g_tabStep[g_bandList[g_bandIndex].currentStepIdx]);
+            g_si4735.setSeekAmSpacing(amSeekSpacing());
         showStep();
     }
 }
@@ -1187,7 +1138,10 @@ void doStep(int8_t v)
 void updateBFO()
 {
     //Actually to move frequency forward you need to move BFO backwards, so just * -1
-    g_si4735.setSSBBfo((g_currentBFO + (g_Settings[SettingsIndex::BFO].param * 10)) * -1);
+    // Startup validation and tuning enforce the bounds asserted in ReceiverState.h.
+    int16_t calibratedBFO = int16_t(g_currentBFO
+        + g_Settings[SettingsIndex::BFO].param * STATE_BFO_CALIBRATION_SCALE);
+    g_si4735.setSSBBfo(-calibratedBFO);
 }
 
 //Volume control
@@ -1206,11 +1160,14 @@ void doVolume(int8_t v)
             g_si4735.volumeDown();
     }
     showVolume();
+    resetEepromDelay();
 }
 
 //Helps to save more flash image size
 void doSwitchLogic(int8_t& param, int8_t low, int8_t high, int8_t step)
 {
+    if (step)
+        resetEepromDelay();
     param += step;
     if (param < low)
         param = high;
@@ -1254,7 +1211,7 @@ void doBrightness(int8_t v)
 }
 
 //Settings: SSB AVC Switch
-void doSSBAVC(int8_t v = 0)
+void doSSBAVC(int8_t v)
 {
     doSwitchLogic(g_Settings[SettingsIndex::SVC].param, 0, 1, v);
 
@@ -1275,7 +1232,7 @@ void doAvc(int8_t v)
 }
 
 //Settings: Sync switch
-void doSync(int8_t v = 0)
+void doSync(int8_t v)
 {
     doSwitchLogic(g_Settings[SettingsIndex::Sync].param, 0, 1, v);
 
@@ -1288,7 +1245,7 @@ void doSync(int8_t v = 0)
 }
 
 //Settings: FM DeEmp switch (50 or 75)
-void doDeEmp(int8_t v = 0)
+void doDeEmp(int8_t v)
 {
     doSwitchLogic(g_Settings[SettingsIndex::DeEmp].param, 0, 1, v);
 
@@ -1297,13 +1254,13 @@ void doDeEmp(int8_t v = 0)
 }
 
 //Settings: SW Units
-void doSWUnits(int8_t v = 0)
+void doSWUnits(int8_t v)
 {
     doSwitchLogic(g_Settings[SettingsIndex::SWUnits].param, 0, 1, v);
 }
 
 //Settings: SW Units
-void doSSBSoftMuteMode(int8_t v = 0)
+void doSSBSoftMuteMode(int8_t v)
 {
     doSwitchLogic(g_Settings[SettingsIndex::SSM].param, 0, 1, v);
 
@@ -1320,17 +1277,6 @@ void doCutoffFilter(int8_t v)
         updateSSBCutoffFilter();
 }
 
-//Settings: CPU Frequency divider
-void doCPUSpeed(int8_t v = 0)
-{
-    doSwitchLogic(g_Settings[SettingsIndex::CPUSpeed].param, 0, 1, v);
-
-    noInterrupts();
-    CLKPR = 0x80;
-    CLKPR = g_Settings[SettingsIndex::CPUSpeed].param;
-    interrupts();
-}
-
 #if USE_RDS
 //Settings: RDS Error Level
 void doRDSErrorLevel(int8_t v)
@@ -1341,32 +1287,34 @@ void doRDSErrorLevel(int8_t v)
         setRDSConfig(g_Settings[SettingsIndex::RDSError].param);
 }
 
+#endif
+
 //Settings: BFO Offset calibration
 void doBFOCalibration(int8_t v)
 {
-    doSwitchLogic(g_Settings[SettingsIndex::BFO].param, -60, 60, v);
+    doSwitchLogic(g_Settings[SettingsIndex::BFO].param,
+        -STATE_MAX_BFO_CALIBRATION, STATE_MAX_BFO_CALIBRATION, v);
 
     if (isSSB())
     {
-        setRDSConfig(g_Settings[SettingsIndex::BFO].param);
         updateBFO();
     }
 }
 
 //Settings: Frequency inits displayu switch
-void doFreqUnits(int8_t v = 0)
+void doFreqUnits(int8_t v)
 {
     doSwitchLogic(g_Settings[SettingsIndex::UnitsShow].param, 0, 1, v);
 }
 
 //Settings: Scan button switch
-void doScanSwitch(int8_t v = 0)
+void doScanSwitch(int8_t v)
 {
     doSwitchLogic(g_Settings[SettingsIndex::ScanSwitch].param, 0, 1, v);
 }
 
 //Settings: CW mode switch
-void doCWSwitch(int8_t v = 0)
+void doCWSwitch(int8_t v)
 {
     doSwitchLogic(g_Settings[SettingsIndex::CWSwitch].param, 0, 1, v);
 
@@ -1374,8 +1322,10 @@ void doCWSwitch(int8_t v = 0)
         applyBandConfiguration(true);
 }
 
+#if USE_RDS
 void doRDS()
 {
+    switchCommand(NULL);
     g_displayRDS = !g_displayRDS;
 
     if (g_displayRDS)
@@ -1391,14 +1341,14 @@ void doRDS()
 #endif
 
 //Prevents repeatable code for flash image size saving
-void doBandwidthLogic(int8_t& bwIndex, uint8_t upperLimit, uint8_t v)
+void doBandwidthLogic(int8_t& bwIndex, uint8_t upperLimit, int8_t v)
 {
     doSwitchLogic(bwIndex, 0, upperLimit, v);
     g_bandList[g_bandIndex].bandwidthIdx = bwIndex;
 }
 
 //Bandwidth regulation logic
-void doBandwidth(uint8_t v)
+void doBandwidth(int8_t v)
 {
     if (isSSB())
     {
@@ -1409,111 +1359,87 @@ void doBandwidth(uint8_t v)
     else if (g_currentMode == AM)
     {
         doBandwidthLogic(g_bwIndexAM, g_maxFilterAM, v);
-        g_bandList[g_bandIndex].bandwidthIdx = g_bwIndexAM;
         g_si4735.setBandwidth(g_bandwidthAM[g_bwIndexAM].idx, 1);
     }
     else
     {
         doBandwidthLogic(g_bwIndexFM, 4, v);
-        g_bandList[g_bandIndex].bandwidthIdx = g_bwIndexFM;
         g_si4735.setFmBandwidth(g_bwIndexFM);
     }
     showBandwidth();
 }
 
-void switchCommand(bool* b, void (*showFunction)())
+void switchCommand(bool* b)
 {
-    static bool* prev = NULL;
-    static void (*prevFunc)() = NULL;
-
-    if (!b)
+    bool wasActive = g_cmdVolume || g_cmdStep || g_cmdBw || g_cmdBand;
+    bool enable = b && !*b;
+    g_cmdVolume = false;
+    g_cmdStep = false;
+    g_cmdBw = false;
+    g_cmdBand = false;
+    if (enable)
     {
-        if (prev)
-        {
-            *prev = false;
-            if (prevFunc)
-                prevFunc();
-            g_lastAdjustmentTime = 0;
-            prev = NULL;
-        }
-        return;
+        *b = true;
+        g_lastAdjustmentTime = millis();
+    }
+    else
+    {
+        g_lastAdjustmentTime = 0;
     }
 
-    bool last = *b;
-    prev = b;
-    prevFunc = showFunction;
-
-    if (*b == false)
+    if (wasActive || enable)
     {
-        g_cmdVolume = false;
-        g_cmdStep = false;
-        g_cmdBw = false;
-        g_cmdBand = false;
-        g_lastAdjustmentTime = millis();
         showVolume();
         showStep();
         showBandwidth();
         showModulation();
     }
-    else
-        g_lastAdjustmentTime = 0;
-
-    *b = !last;
-
-    if (showFunction)
-        showFunction();
 }
 
 bool clampSSBBand()
 {
-    uint16_t freq = g_currentFrequency + (g_currentBFO / 1000);
-    auto bfoReset = [&]()
-    {
-        g_currentBFO = 0;
-        updateBFO();
-        showFrequency(true);
-        showModulation();
-    };
-
-    bool upd = false;
-    if (freq > g_bandList[g_bandIndex].maximumFreq)
+    bool wrapped = false;
+    if (ssbFrequencyKHzCeil() > int16_t(g_bandList[g_bandIndex].maximumFreq))
     {
         g_currentFrequency = g_bandList[g_bandIndex].minimumFreq;
-        upd = true;
+        wrapped = true;
     }
-    else if (freq < g_bandList[g_bandIndex].minimumFreq)
+    else if (ssbFrequencyKHzFloor() < int16_t(g_bandList[g_bandIndex].minimumFreq))
     {
         g_currentFrequency = g_bandList[g_bandIndex].maximumFreq;
-        upd = true;
+        wrapped = true;
     }
 
-    if (upd)
+    if (wrapped)
     {
+        g_currentBFO = 0;
         g_bandList[g_bandIndex].currentFreq = g_currentFrequency;
+        updateBFO();
         g_si4735.setFrequency(g_currentFrequency);
-        bfoReset();
+        showFrequency(true);
+        showModulation();
         return true;
     }
 
     return false;
 }
 
-void doFrequencyTune()
+void doFrequencyTune(int8_t direction)
 {
-    g_seekDirection = g_encoderCount == 1 ? 1 : 0;
+    g_seekDirection = direction == 1 ? 1 : 0;
 
     //Update frequency
-    g_previousFrequency = g_currentFrequency; //Force EEPROM update
+    resetEepromDelay();
     if (g_currentMode == FM)
     {
-        g_currentFrequency += g_tabStepFM[g_FMStepIndex] * g_encoderCount; //g_si4735.getFrequency() is too slow
+        g_currentFrequency += flashRead8(&g_tabStepFM[g_FMStepIndex]) * direction; //g_si4735.getFrequency() is too slow
 #if USE_RDS
         if (g_displayRDS)
             oledPrint(_literal_EmptyLine, 0, 6, DEFAULT_FONT);
 #endif
     }
     else
-        g_currentFrequency += g_tabStep[g_stepIndex] * g_encoderCount;
+        g_currentFrequency += flashRead16(&g_tabStep[g_stepIndex]) * direction;
     uint16_t bMin = g_bandList[g_bandIndex].minimumFreq, bMax = g_bandList[g_bandIndex].maximumFreq;
 
     //Special logic for fast and responsive frequency surfing
@@ -1541,160 +1467,54 @@ void resetLowerLine()
 
 //Special feature to make SSB feel like on expensive TECSUN receivers
 //BFO is now part of main frequency in SSB mode
-void doFrequencyTuneSSB()
+void doFrequencyTuneSSB(int8_t direction)
 {
-    const int BFOMax = 16000;
-    int step = g_encoderCount == 1 ? getSteps() : getSteps() * -1;
-    int newBFO = g_currentBFO + step;
-    int redundant = 0;
-
-    if (newBFO > BFOMax)
+    uint16_t previousBase = g_currentFrequency;
+    int16_t newBFO = int16_t(g_currentBFO + (direction == 1 ? getSteps() : -getSteps()));
+    while (newBFO > STATE_MAX_BFO_HZ)
     {
-        redundant = (newBFO / BFOMax) * BFOMax;
-        g_currentFrequency += redundant / 1000;
-        newBFO -= redundant;
+        g_currentFrequency += STATE_MAX_BFO_KHZ;
+        newBFO -= STATE_MAX_BFO_HZ;
     }
-    else if (newBFO < -BFOMax)
+    while (newBFO < -STATE_MAX_BFO_HZ)
     {
-        redundant = ((abs(newBFO) / BFOMax) * BFOMax);
-        g_currentFrequency -= redundant / 1000;
-        newBFO += redundant;
+        g_currentFrequency -= STATE_MAX_BFO_KHZ;
+        newBFO += STATE_MAX_BFO_HZ;
     }
 
     g_currentBFO = newBFO;
+    g_lastFreqChange = millis();
+    resetEepromDelay();
+    // Check the effective frequency before sending either BFO or carrier commands.
+    if (clampSSBBand())
+        return;
     updateBFO();
 
-    if (redundant != 0)
+    if (g_currentFrequency != previousBase)
     {
         g_si4735.setFrequency(g_currentFrequency);
         agcSetFunc(); //Re-apply to remove noize
         g_currentFrequency = g_si4735.getFrequency();
-        g_bandList[g_bandIndex].currentFreq = g_currentFrequency;
     }
 
-    g_bandList[g_bandIndex].currentFreq = g_currentFrequency + (g_currentBFO / 1000);
-    g_lastFreqChange = millis();
-    g_previousFrequency = 0; //Force EEPROM update
-    if (!clampSSBBand()) //If we move outside of current band - switch it
-        showFrequency();
+    g_bandList[g_bandIndex].currentFreq = g_currentFrequency;
+    showFrequency();
 }
 
-void loop()
+void handleButtons()
 {
-    uint8_t x;
-    bool skipButtonEvents = false;
-    bool frequencyRecentlyUpdated = millis() - g_lastFreqChange < 70;
-
-    //Faster frequency tune
-    if (g_processFreqChange && !isSSB())
-    {
-        if (!frequencyRecentlyUpdated && g_encoderCount == 0)
-        {
-            g_si4735.setFrequency(g_currentFrequency);
-            g_processFreqChange = false;
-        }
-        else if (frequencyRecentlyUpdated && g_encoderCount != 0)
-        {
-            doFrequencyTune();
-            g_encoderCount = 0;
-            return;
-        }
-    }
-    
-    if (millis() - g_lastFreqChange >= 1000)
-    {
-#if USE_RDS
-        showRDS();
-#endif
-
-        if (g_sMeterOn && !g_settingsActive)
-            showSMeter();
-
-        showCharge(false);
-    }
-
-    if (g_lastAdjustmentTime != 0 && millis() - g_lastAdjustmentTime > ADJUSTMENT_ACTIVE_TIMEOUT)
-        switchCommand(NULL, NULL);
-
-    //Encoder rotation check
-    if (g_encoderCount != 0)
-    {
-        if (g_lastAdjustmentTime != 0)
-            g_lastAdjustmentTime = millis();
-
-        if (g_settingsActive)
-        {
-            if (!g_SettingEditing)
-            {
-                int8_t prev = g_SettingSelected;
-                int8_t next = g_SettingSelected;
-
-                next += g_encoderCount;
-
-                uint8_t pageIdx = g_SettingsPage - 1;
-                uint8_t maxOnThisPage = (pageIdx * 6) + 5;
-                if (maxOnThisPage >= SettingsIndex::SETTINGS_MAX)
-                    maxOnThisPage = SettingsIndex::SETTINGS_MAX - 1;
-
-                if (next < pageIdx * 6)
-                    g_SettingSelected = maxOnThisPage;
-                else if (next > maxOnThisPage)
-                    g_SettingSelected = pageIdx * 6;
-                else
-                    g_SettingSelected = next;
-
-                DrawSetting(prev, true);
-                DrawSetting(g_SettingSelected, true);
-            }
-            else
-            {
-                (*g_Settings[g_SettingSelected].manipulateCallback)(g_encoderCount);
-                DrawSetting(g_SettingSelected, false);
-                delay(MIN_ELAPSED_TIME);
-            }
-        }
-        else if (g_cmdVolume)
-            doVolume(g_encoderCount);
-        else if (g_cmdStep)
-            doStep(g_encoderCount);
-        else if (g_cmdBw)
-            doBandwidth(g_encoderCount);
-        else if (g_cmdBand)
-        {
-            if (g_encoderCount == 1)
-                bandSwitch(true);
-            else
-                bandSwitch(false);
-        }
-        else if (isSSB())
-        {
-            doFrequencyTuneSSB();
-            skipButtonEvents = true;
-        }
-        else
-        {
-            doFrequencyTune();
-            skipButtonEvents = true;
-        }
-        g_encoderCount = 0;
-        resetEepromDelay();
-    }
-
-    if (skipButtonEvents)
-        goto saveAttempt;
-
     //Command-checkers
     if (BUTTONEVENT_SHORTPRESS == btn_Bandwidth.checkEvent(simpleEvent))
     {
         if (!g_settingsActive && g_currentMode != CW)
-            switchCommand(&g_cmdBw, showBandwidth);
+            switchCommand(&g_cmdBw);
     }
     if (BUTTONEVENT_SHORTPRESS == btn_BandUp.checkEvent(bandEvent))
     {
         if (!g_settingsActive)
         {
             resetLowerLine();
-            switchCommand(&g_cmdBand, showModulation);
+            switchCommand(&g_cmdBand);
         }
         else
         {
@@ -1704,14 +1524,14 @@ void loop()
     if (BUTTONEVENT_SHORTPRESS == btn_BandDn.checkEvent(bandEvent))
     {
         if (!g_settingsActive)
-            switchCommand(NULL, NULL);
+            switchCommand(NULL);
         g_settingsActive = !g_settingsActive;
         switchSettings();
     }
     if (BUTTONEVENT_SHORTPRESS == btn_VolumeUp.checkEvent(volumeEvent))
     {
         if (!g_settingsActive && g_muteVolume == 0)
-            switchCommand(&g_cmdVolume, showVolume);
+            switchCommand(&g_cmdVolume);
     }
     if (BUTTONEVENT_SHORTPRESS == btn_VolumeDn.checkEvent(volumeEvent))
     {
@@ -1764,8 +1584,8 @@ void loop()
         {
             if (!g_settingsActive)
             {
-                switchCommand(&g_cmdStep, showStep);
                 resetLowerLine();
+                switchCommand(&g_cmdStep);
             }
         }
         //Seek in SSB/CW is not allowed
@@ -1773,14 +1593,10 @@ void loop()
             doSeek();
     }
 
-    //This is a hack, it allows SHORTPRESS and LONGPRESS events
-    //Be processed without complicated overhead
-    //It requires to save checkEvent result into a variable
-    //That has exact same name as event processing function for this button
-    uint8_t agcEvent = btn_AGC.checkEvent(agcEvent);
-    if (BUTTONEVENT_SHORTPRESS == agcEvent)
+    uint8_t event = btn_AGC.checkEvent();
+    if (BUTTONEVENT_SHORTPRESS == event)
     {
-        if (!g_settingsActive || g_settingsActive && !g_displayOn)
+        if (!g_settingsActive || !g_displayOn)
         {
             g_displayOn = !g_displayOn;
             if (g_displayOn)
@@ -1789,7 +1605,7 @@ void loop()
                 oled.off();
         }
     }
-    if (BUTTONEVENT_LONGPRESS == agcEvent)
+    if (BUTTONEVENT_FIRSTLONGPRESS == event)
     {
         if (!g_settingsActive)
         {
@@ -1797,19 +1613,20 @@ void loop()
                 doSync(1);
         }
     }
-    uint8_t stepEvent = btn_Step.checkEvent(stepEvent);
-    if (BUTTONEVENT_SHORTPRESS == stepEvent)
+    event = btn_Step.checkEvent();
+    if (BUTTONEVENT_SHORTPRESS == event)
     {
         if (!g_settingsActive)
         {
-            switchCommand(&g_cmdStep, showStep);
             resetLowerLine();
+            switchCommand(&g_cmdStep);
         }
     }
-    if (BUTTONEVENT_LONGPRESSDONE == stepEvent)
+    if (BUTTONEVENT_LONGPRESSDONE == event)
     {
         if (!g_settingsActive)
         {
+            switchCommand(NULL);
             g_sMeterOn = !g_sMeterOn;
             if (g_sMeterOn)
             {
@@ -1827,34 +1644,34 @@ void loop()
             //Do nothing on FM mode (unfortunately no NBFM patch), otherwise switch AM modulation
             if (g_currentMode != FM)
             {
-                g_bandList[g_bandIndex].currentFreq = g_currentFrequency;
-                g_prevMode = g_currentMode;
+                switchCommand(NULL);
                 switch (g_currentMode)
                 {
                 case AM:
                     //Patch Si473x memory every time when enabling SSB
                     loadSSBPatch();
                     g_processFreqChange = false;
-                    //Allow pass through
+                    g_currentBFO = 0;
+                    // fall through
 
                 case LSB:
                     g_currentMode++;
-                    g_bandList[g_bandIndex].currentFreq += g_currentBFO / 1000;
                     break;
 
                 case USB:
                     g_currentMode++;
                     g_cmdBw = false;
-                    g_bandList[g_bandIndex].currentFreq += g_currentBFO / 1000;
                     break;
 
                 case CW:
                     g_currentMode = AM;
                     g_ssbLoaded = false;
+                    g_currentFrequency = ssbRoundedFrequencyKHz();
+                    g_bandList[g_bandIndex].currentFreq = g_currentFrequency;
                     if (g_stepIndex >= g_amTotalSteps)
                         g_stepIndex = 0;
 
-                    g_currentFrequency += (g_currentBFO / 1000);
+                    g_currentBFO = 0;
                     break;
                 }
 
@@ -1867,18 +1684,107 @@ void loop()
 #endif
         }
     }
+}
 
-saveAttempt:
-    //Save EEPROM if anough time passed and frequency changed
-    if (g_currentFrequency != g_previousFrequency)
+void loop()
+{
+    int8_t direction = takeEncoderStep();
+    bool skipButtonEvents = false;
+    bool frequencyRecentlyUpdated = millis() - g_lastFreqChange < 70;
+
+    //Faster frequency tune
+    if (g_processFreqChange && !isSSB())
     {
-        if ((millis() - g_storeTime) > STORE_TIME)
+        if (!frequencyRecentlyUpdated && direction == 0)
         {
-            saveAllReceiverInformation();
-            g_storeTime = millis();
-            g_previousFrequency = g_currentFrequency;
+            g_si4735.setFrequency(g_currentFrequency);
+            g_processFreqChange = false;
         }
     }
+
+    if (millis() - g_lastFreqChange >= 1000)
+    {
+#if USE_RDS
+        showRDS();
+#endif
+
+        if (g_sMeterOn && !g_settingsActive)
+            showSMeter();
+
+        showCharge(false);
+    }
+
+    if (g_lastAdjustmentTime != 0 && millis() - g_lastAdjustmentTime > ADJUSTMENT_ACTIVE_TIMEOUT)
+        switchCommand(NULL);
+
+    //Encoder rotation check
+    if (direction != 0)
+    {
+        if (g_lastAdjustmentTime != 0)
+            g_lastAdjustmentTime = millis();
+
+        if (g_settingsActive)
+        {
+            if (!g_SettingEditing)
+            {
+                int8_t prev = g_SettingSelected;
+                int8_t next = g_SettingSelected;
+
+                next += direction;
+
+                uint8_t pageIdx = g_SettingsPage - 1;
+                uint8_t maxOnThisPage = (pageIdx * 6) + 5;
+                if (maxOnThisPage >= SettingsIndex::SETTINGS_MAX)
+                    maxOnThisPage = SettingsIndex::SETTINGS_MAX - 1;
+
+                if (next < pageIdx * 6)
+                    g_SettingSelected = maxOnThisPage;
+                else if (next > maxOnThisPage)
+                    g_SettingSelected = pageIdx * 6;
+                else
+                    g_SettingSelected = next;
+
+                DrawSetting(prev, true);
+                DrawSetting(g_SettingSelected, true);
+            }
+            else
+            {
+                (*g_Settings[g_SettingSelected].manipulateCallback)(direction);
+                DrawSetting(g_SettingSelected, false);
+                delay(MIN_ELAPSED_TIME);
+            }
+        }
+        else if (g_cmdVolume)
+            doVolume(direction);
+        else if (g_cmdStep)
+            doStep(direction);
+        else if (g_cmdBw)
+            doBandwidth(direction);
+        else if (g_cmdBand)
+        {
+            if (direction == 1)
+                bandSwitch(true);
+            else
+                bandSwitch(false);
+        }
+        else if (isSSB())
+        {
+            doFrequencyTuneSSB(direction);
+            skipButtonEvents = true;
+        }
+        else
+        {
+            doFrequencyTune(direction);
+            skipButtonEvents = true;
+        }
+        resetEepromDelay();
+    }
+
+    if (!skipButtonEvents)
+        handleButtons();
+
+    if (g_settingsDirty && (millis() - g_storeTime) > STORE_TIME)
+        saveAllReceiverInformation();
 }
 
 //Overriding original main to save some space

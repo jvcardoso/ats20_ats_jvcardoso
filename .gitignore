@@ -16,7 +16,13 @@
 # Mono auto generated files
 mono_crash.*
 
-# Build results
+# Build results and local agent/analysis files
+/build/
+/analises/
+AGENTS.md
+CLAUDE.md
+GEMINI.md
+.DS_Store
 [Dd]ebug/
 [Dd]ebugPublic/
 [Rr]elease/

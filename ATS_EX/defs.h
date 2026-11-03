@@ -2,12 +2,10 @@
 
 //If you set this def to 0 project will be compiled without RDS 
 //and everything related to RDS will be excluded from build
+#ifndef USE_RDS
 #define USE_RDS 1
+#endif
 
-#define EEPROM_APP_ID				235
-#define EEPROM_DATA_START_ADDRESS	1
-#define EEPROM_VERSION_ADDRESS      1000
-#define EEPROM_APP_ID_ADDRESS       0
 
 //EEPROM Settings
 #define STORE_TIME 10000 // Inactive time to save our settings
@@ -51,5 +49,6 @@
 
 #define BAND_DELAY                 2
 #define VOLUME_DELAY               1 
+#define FM_SEEK_SPACING            10 // Documented 100 kHz spacing in the SI4735 property.
 
 #define buttonEvent                NULL

@@ -23,18 +23,6 @@ void oledPrint(const char* text, int offX = -1, int offY = -1, const DCfont* fon
         oled.invertOutput(false);
 }
 
-void oledPrint(uint16_t u, int offX = -1, int offY = -1, const DCfont* font = LastFont, bool invert = false)
-{
-    oledSetFont(font);
-    if (invert)
-        oled.invertOutput(invert);
-    if (offX >= 0 && offY >= 0)
-        oled.setCursor(offX, offY);
-    oled.print(u);
-    if (invert)
-        oled.invertOutput(false);
-}
-
 //Faster alternative for convertToChar
 void utoa(char* out, uint16_t num)
 {
@@ -104,18 +92,16 @@ int ilen(uint16_t n)
         return 5;
 }
 
+// Shared Hz calculation used by display formatting and regression tests.
+int32_t ssbEffectiveFrequencyHz()
+{
+    return int32_t(g_currentFrequency) * 1000L + g_currentBFO;
+}
+
 //Split KHz frequency + BFO to KHz and .00 tail
 void splitFreq(uint16_t& khz, uint16_t& tail)
 {
-    int32_t freq = (uint32_t(g_currentFrequency) * 1000) + g_currentBFO;
+    int32_t freq = ssbEffectiveFrequencyHz();
     khz = freq / 1000;
     tail = abs(freq % 1000) / 10;
-}
-
-uint8_t strlen8(const char* str)
-{
-    uint8_t n = 0;
-    while (str[n] != '\0')
-        n++;
-    return n;
 }

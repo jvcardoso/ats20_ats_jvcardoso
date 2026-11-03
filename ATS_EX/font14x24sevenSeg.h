@@ -62,7 +62,8 @@ const DCfont TinyOLED4kfont14x24sevenSeg =
 	(uint8_t*)ssd1306xled_font14x24sevenSeg,
 	14, //Character width in pixels
 	3, //Character height in pages (8 pixels)
-	46, 57 //ASCII extents
+	46, 57, //ASCII extents
+	0, 0, 0 //Optional proportional-font fields (Tiny4kOLED 2.3.0)
 };
 
 //For backwards compatibility

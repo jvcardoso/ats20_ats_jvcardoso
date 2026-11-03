@@ -97,6 +97,9 @@
     <ClInclude Include="patch_ssb_compressed.h" />
     <ClInclude Include="Rotary.h" />
     <ClInclude Include="SimpleButton.h" />
+    <ClInclude Include="ReceiverState.h" />
+    <ClInclude Include="RdsText.h" />
+    <ClInclude Include="FlashAccess.h" />
     <ClInclude Include="Utils.h" />
     <ClInclude Include="__vm\.ATS_EX.vsarduino.h" />
   </ItemGroup>
