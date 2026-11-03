@@ -5,6 +5,7 @@
 #ifndef USE_RDS
 #define USE_RDS 1
 #endif
+static_assert(USE_RDS == 0 || USE_RDS == 1, "USE_RDS must be 0 or 1");
 
 
 //EEPROM Settings
@@ -21,6 +22,8 @@
 // Encoder
 #define ENCODER_PIN_A 2
 #define ENCODER_PIN_B 3
+static_assert(ENCODER_PIN_A < 8 && ENCODER_PIN_B < 8 && ENCODER_PIN_A != ENCODER_PIN_B,
+    "Rotary pins must be distinct PORTD pins");
 
 // Buttons
 #define MODE_SWITCH       4 
@@ -36,7 +39,6 @@
 
 // Default values
 #define MIN_ELAPSED_TIME 100
-#define MIN_ELAPSED_RSSI_TIME 150
 #define DEFAULT_VOLUME 25
 #define ADJUSTMENT_ACTIVE_TIMEOUT 3000
 
@@ -50,5 +52,3 @@
 #define BAND_DELAY                 2
 #define VOLUME_DELAY               1 
 #define FM_SEEK_SPACING            10 // Documented 100 kHz spacing in the SI4735 property.
-
-#define buttonEvent                NULL

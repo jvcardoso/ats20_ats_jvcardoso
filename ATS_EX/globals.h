@@ -1,5 +1,6 @@
 #pragma once
 
+#include "defs.h"
 #include "FlashAccess.h"
 
 uint32_t g_storeTime = 0;
@@ -7,7 +8,6 @@ bool g_settingsDirty = false;
 
 bool g_voltagePinConnnected = false;
 bool g_ssbLoaded = false;
-bool g_fmStereo = true;
 
 bool g_cmdVolume = false;
 bool g_cmdStep = false;
@@ -51,7 +51,7 @@ enum SettingType
 
 struct SettingsItem
 {
-    char name[5];
+    char name[4];
     int8_t param;
     uint8_t type;
     void (*manipulateCallback)(int8_t);
@@ -122,6 +122,8 @@ enum SettingsIndex
 };
 
 const uint8_t g_SettingsMaxPages = 3;
+static_assert((SettingsIndex::SETTINGS_MAX + 5) / 6 <= g_SettingsMaxPages,
+    "Settings pages are too small for the menu");
 int8_t g_SettingSelected = 0;
 int8_t g_SettingsPage = 1;
 bool g_SettingEditing = false;
@@ -187,7 +189,6 @@ const uint16_t g_tabStep[] RADIO_PROGMEM =
     500
 };
 uint8_t g_amTotalSteps = 7;
-uint8_t g_amTotalStepsSSB = 4; //Prevent large AM steps appear in SSB mode
 uint8_t g_ssbTotalSteps = 5;
 int8_t g_stepIndex = 3;
 

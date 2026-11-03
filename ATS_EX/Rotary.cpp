@@ -71,8 +71,8 @@ Rotary::Rotary(char _pin1, char _pin2)
 
 unsigned char Rotary::process() 
 {
-	// Grab state of input pins
-	unsigned char pinstate = ((PIND & (1 << 3)) >> 2) | ((PIND & (1 << 2)) >> 2);
+	// Grab state of input pins: bit 1 is pin2 (B), bit 0 is pin1 (A).
+	unsigned char pinstate = ((PIND >> pin1) & 1) | (((PIND >> pin2) & 1) << 1);
 	// Determine new state from the pins and state table
 	state = flashRead8(&ttable[state & 0xf][pinstate]);
 	// Return emit bits, ie the generated event

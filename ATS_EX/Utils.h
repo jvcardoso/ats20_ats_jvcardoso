@@ -23,29 +23,6 @@ void oledPrint(const char* text, int offX = -1, int offY = -1, const DCfont* fon
         oled.invertOutput(false);
 }
 
-//Faster alternative for convertToChar
-void utoa(char* out, uint16_t num)
-{
-    char* p = out;
-    if (num == 0)
-        *p++ = '0';
-    else
-    {
-        for (uint16_t base = 10000; base > 0; base /= 10)
-        {
-            if (num >= base)
-            {
-                *p++ = '0' + num / base;
-                num %= base;
-            }
-            else if (p != out)
-                *p++ = '0';
-        }
-    }
-
-    *p = '\0';
-}
-
 //Better than sprintf which has overwhelmingly large overhead, it helps to reduce binary size
 void convertToChar(char* strValue, uint16_t value, uint8_t len, uint8_t dot = 0, uint8_t separator = 0, uint8_t space = ' ')
 {

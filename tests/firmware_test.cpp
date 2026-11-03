@@ -469,6 +469,17 @@ void testControls()
     assert(g_encoderCount == 127);
     for (int i = 0; i < 400; i++) turn(counterclockwise);
     assert(g_encoderCount == -127);
+
+    Rotary alternate(4, 5);
+    int alternateCw = 0, alternateCcw = 0;
+    for (uint8_t phase : clockwise)
+    {
+        PIND = (PIND & ~0x30) | (phase << 4);
+        unsigned char dir = alternate.process();
+        if (dir == DIR_CW) ++alternateCw;
+        if (dir == DIR_CCW) ++alternateCcw;
+    }
+    assert(alternateCw == 1 && alternateCcw == 0);
     assert(!validStep(4, SW_BAND_TYPE, USB));
     assert(!validStep(5, MW_BAND_TYPE, AM));
     ssb(0);

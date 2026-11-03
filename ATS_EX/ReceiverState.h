@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdint.h>
+#include "defs.h"
 
 #ifdef __AVR__
 #include <avr/pgmspace.h>
@@ -106,6 +107,8 @@ inline bool validReceiverState(const ReceiverState& state)
 #endif
         {-STATE_MAX_BFO_CALIBRATION, STATE_MAX_BFO_CALIBRATION}, {0, 1}, {0, 1}, {0, 1}
     };
+    static_assert(sizeof(limits) / sizeof(limits[0]) == STATE_SETTINGS_COUNT,
+        "Settings limits table mismatch");
     for (uint8_t i = 0; i < STATE_SETTINGS_COUNT; i++)
         if (state.settings[i] < stateReadLimit(&limits[i][0])
             || state.settings[i] > stateReadLimit(&limits[i][1]))
