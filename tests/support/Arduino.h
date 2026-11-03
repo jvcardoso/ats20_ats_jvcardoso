@@ -7,8 +7,14 @@
 extern uint8_t DDRB, DDRC, DDRD, PORTB, PORTC, PORTD, PINB, PINC, PIND, CLKPR;
 extern uint32_t testMillis;
 extern int testAnalogSample;
+extern void (*testDelayHook)(uint32_t);
 inline uint32_t millis() { return testMillis; }
-inline void delay(uint32_t ms) { testMillis += ms; }
+inline void delay(uint32_t ms)
+{
+    testMillis += ms;
+    if (testDelayHook)
+        testDelayHook(ms);
+}
 inline int analogRead(uint8_t) { return testAnalogSample; }
 inline void noInterrupts() {}
 inline void interrupts() {}

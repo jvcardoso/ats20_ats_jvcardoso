@@ -15,6 +15,7 @@
 uint8_t DDRB, DDRC, DDRD, PORTB, PORTC, PORTD, PINB = 255, PINC = 255, PIND = 255, CLKPR;
 uint32_t testMillis;
 int testAnalogSample = 600;
+void (*testDelayHook)(uint32_t) = nullptr;
 struct DCfont {};
 const DCfont testFont;
 const DCfont* const FONT8X16POB = &testFont;
@@ -206,6 +207,7 @@ void resetRuntime()
     g_displayOn = true; g_processFreqChange = false; g_lastFreqChange = g_lastAdjustmentTime = 0;
     g_currentFrequency = 1476; g_si4735 = SI4735();
     testAnalogSample = 600;
+    testDelayHook = nullptr;
     PINB = PINC = PIND = 255;
     btn_AGC = SimpleButton(AGC_BUTTON); btn_Step = SimpleButton(STEP_BUTTON);
     btn_VolumeUp = SimpleButton(VOLUME_BUTTON); btn_Mode = SimpleButton(MODE_SWITCH);
@@ -287,6 +289,24 @@ void testShortReleaseDebounce()
     testMillis += 16; button.checkEvent(countShortButtonEvents);
     assert(shortButtonEvents == 2);
     std::cout << "PASS buttons: short-release debounce with contact bounce\n";
+}
+
+void testResetConfirmation()
+{
+    resetRuntime(); EEPROM = TestStorage(); setup();
+    g_si4735.volume = 45;
+    saveAllReceiverInformation();
+    ReceiverState saved;
+    assert(loadReceiverState(EEPROM, saved) && saved.volume == 45);
+
+    resetRuntime();
+    pin(ENCODER_BUTTON, false);
+    testDelayHook = [](uint32_t) { PINC |= 1 << (ENCODER_BUTTON - 14); };
+    setup();
+    testDelayHook = nullptr;
+    assert(g_volume == 45);
+    assert(g_currentMode == AM);
+    std::cout << "PASS EEPROM reset: releasing the button during confirmation preserves settings\n";
 }
 
 void testMenuWear()
@@ -812,7 +832,8 @@ void testSeekProtocol()
 int main()
 {
     testBatteryInitialSample(); testShortReleaseDebounce();
-    testMenuWear(); testStorage(); testControls(); testFrequencyBehavior(); testSeekStartGrid();
+    testResetConfirmation(); testMenuWear(); testStorage(); testControls();
+    testFrequencyBehavior(); testSeekStartGrid();
     testInvalidFrequencyProtection(); testRds();
     testProductionFormatting(); testContinuousSsbTuning(); testCommandTransitions(); testSeekProtocol();
     std::cout << "PASS all host regressions (USE_RDS=" << USE_RDS << ")\n";
