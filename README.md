@@ -15,8 +15,8 @@
 | **Custom Revision / Revisão Customizada** | **`ATS_EX v1.18-r3`** (`JVCARDOSO 2026` — [`jvcardoso/ats20_ats_jvcardoso`](https://github.com/jvcardoso/ats20_ats_jvcardoso)) |
 | **Original Author / Autor Original (`v1.18`)** | **[Goshante (`goshante/ats20_ats_ex`)](https://github.com/goshante/ats20_ats_ex)** |
 | **DSP Library / Biblioteca Base** | **[PU2CLR SI4735 (`pu2clr/SI4735`)](https://github.com/pu2clr/SI4735)** (inspired by `swling.ru`) |
-| **Download `v1.18-r3` (Recommended / Com RDS)** | **[`ATS_EX_v1.18-r3_RDS.hex`](https://github.com/jvcardoso/ats20_ats_jvcardoso/releases/download/v1.18-r3/ATS_EX_v1.18-r3_RDS.hex)** (`30,648` bytes Flash / `1,078` bytes SRAM) |
-| **Download `v1.18-r3` (No RDS / Sem RDS)** | **[`ATS_EX_v1.18-r3_NO_RDS.hex`](https://github.com/jvcardoso/ats20_ats_jvcardoso/releases/download/v1.18-r3/ATS_EX_v1.18-r3_NO_RDS.hex)** (`29,276` bytes Flash / `1,054` bytes SRAM) |
+| **Download `v1.18-r3` (Recommended / Com RDS)** | **[`ATS_EX_v1.18-r3_RDS.hex`](https://github.com/jvcardoso/ats20_ats_jvcardoso/releases/download/v1.18-r3/ATS_EX_v1.18-r3_RDS.hex)** (`30,570` bytes Flash / `1,074` bytes SRAM) |
+| **Download `v1.18-r3` (No RDS / Sem RDS)** | **[`ATS_EX_v1.18-r3_NO_RDS.hex`](https://github.com/jvcardoso/ats20_ats_jvcardoso/releases/download/v1.18-r3/ATS_EX_v1.18-r3_NO_RDS.hex)** (`29,232` bytes Flash / `1,053` bytes SRAM) |
 | **Download Original `v1.18` (Goshante)** | **[`ATS_EX_v1.18.hex`](https://github.com/goshante/ats20_ats_ex/releases/download/v1.18/ATS_EX_v1.18.hex)** (03.04.2024) |
 
 > **Source hardening note:** the current source tree contains post-r3 fixes and its measured sizes are shown above. The previously published r3 assets must be regenerated from this tree before they match these values; the `v1.18-r3` banner is intentionally unchanged.
@@ -49,7 +49,7 @@ Key technical improvements over upstream `v1.18`:
 - **Validated EEPROM State (`v4`/`v5`)**: Validates all stored parameters on boot and automatically resets to safe defaults if out-of-range or incompatible data is detected. Upgrading from upstream `v1.18` or `r1` restores defaults once; `r3` preserves valid `r2`/`r3` settings for the same RDS variant.
 - **Bounded RDS Buffers (`USE_RDS=1` / `USE_RDS=0`)**: Safely sanitizes PS/RT/PI fields to printable 16-character ASCII strings without buffer overruns.
 - **Nominal CPU Clock**: Removed the runtime CPU clock divider (`CPU` setting) so `millis()`, button debouncing, and EEPROM save timers always run at nominal speed.
-- **`PROGMEM` Tables**: Moved step, sub-band, battery and validation-limit tables to Flash (`FlashAccess.h`). The current build uses `1,078` B of SRAM (`970` B free) and `30,648` B of Flash (`72` B free) on the Nano with RDS.
+- **`PROGMEM` Tables**: Moved step, sub-band, battery and validation-limit tables to Flash (`FlashAccess.h`). The current build uses `1,074` B of SRAM (`974` B free) and `30,570` B of Flash (`150` B free) on the Nano with RDS.
 
 ### Additional Hardening in This Source Tree
 
@@ -59,6 +59,7 @@ Key technical improvements over upstream `v1.18`:
 - **Menu browsing no longer wears EEPROM**: Navigating or closing an unchanged menu writes nothing.
 - **RDS printable filter**: PS/RT/PI bytes outside printable ASCII are replaced by spaces.
 - **Display-off polling suspended**: RDS, S-meter and battery updates stop while the OLED is off.
+- **Full-screen RDS**: up to 64 RadioText characters in four 16-column lines; PS, 2B and 2A are cycled with the encoder button.
 - **Fatal sanitizers and CI**: Host tests halt on UBSan errors and GitHub Actions builds both boards with and without RDS.
 
 ## Features
@@ -71,7 +72,7 @@ Key technical improvements over upstream `v1.18`:
   - **SW**: `1710` – `30000` kHz (continuous tuning across all SW sub-bands, including CB and all HF Ham Radio bands from 160m to 10m)
   - **FM**: `64` – `108` MHz
 - **Modulations**: `AM`, `LSB`, `USB`, and `CW` on LW/MW/SW; `WFM` on FM.
-- **Dynamic FM RDS**: Displays up to 16 characters of Station Name, Station Info, or Program Info below the frequency.
+- **Full-Screen FM RDS**: `MODE` opens a dedicated 4×16 page showing up to 64 characters of Station Name (8), Station Info/2B (32), or Program Info/2A (64). The encoder button cycles the three fields; `MODE`, tuning, or any adjustment returns to the main screen.
 - **AM/FM Station Scan (`Sca`)**: Scans in the last tuning direction (`100 kHz` spacing on FM; `1/5/9/10 kHz` on AM).
 - **Rich tuning steps**:
   - **AM**: `1k`, `5k`, `9k`, `10k`, `50k`, `100k`, `1M`
@@ -168,7 +169,7 @@ HEX_FILE="build/releases/ATS_EX_v1.18-r3_RDS.hex"
   -U "flash:w:$HEX_FILE:i"
 ```
 
-Wait for `avrdude` to report `30648 bytes of flash verified`. The receiver will reboot and show the `ATS_EX v1.18-r3` / `JVCARDOSO 2026` splash screen.
+Wait for `avrdude` to report `30570 bytes of flash verified`. The receiver will reboot and show the `ATS_EX v1.18-r3` / `JVCARDOSO 2026` splash screen.
 
 #### 4. Restore a previous Flash backup (Rollback)
 ```sh
@@ -225,14 +226,14 @@ python3 tests/run.py
   1. **Short press**: Select the audio/IF **Bandwidth filter** for the active modulation.
 - **`MODE`**:
   1. **In LW/MW/SW**: Cycle between **`AM`**, **`LSB`**, **`USB`**, and **`CW`** modulations.
-  2. **In FM**: Toggle **RDS display** on/off.
+  2. **In FM**: Open/close the **full-screen RDS page**.
 - **Encoder Rotation**:
   1. **Normal mode**: Tune frequency by the active step.
   2. **Settings / Menus**: Navigate and adjust values.
 - **Encoder Button**:
   1. **In AM/FM (when `Sca` is `On`)**: Start **station scan** in the last tuning direction. Rotate the encoder or press the encoder button to **cancel scanning**.
   2. **In SSB/CW (or when `Sca` is `Off`)**: Quick shortcut to adjust the **tuning step**.
-  3. **In FM with RDS active**: Cycle between **Station Name**, **Station Info**, and **Program Info**.
+  3. **In FM with the RDS page active**: Cycle between **Station Name**, **Station Info**, and **Program Info**; each field fills up to four 16-column lines.
   4. **Held during power-on**: Perform an **EEPROM Reset**; keep holding until the progress bar completes.
 
 ### Settings Menu
@@ -328,7 +329,7 @@ Principais melhorias técnicas sobre a versão `v1.18` original:
 - **EEPROM Validada (`v4`/`v5`)**: Todos os dados lidos da EEPROM são validados na inicialização; caso haja valores corrompidos ou de uma versão antiga incompatível (`v1.18` original ou `r1`), o rádio restaura os padrões de fábrica automaticamente com segurança.
 - **Buffers RDS Protegidos (`USE_RDS=1` / `USE_RDS=0`)**: Sanitização completa das mensagens RDS (até 16 caracteres ASCII imprimíveis) sem risco de estouro de memória.
 - **Clock Nominal Estável**: Removida a divisão de clock da CPU para garantir que `millis()`, leitura de botões e temporizadores da EEPROM funcionem sempre com tempo exato.
-- **Tabelas em `PROGMEM`**: Tabelas de passos, subfaixas, bateria e limites de validação movidas para a memória Flash (`FlashAccess.h`). O build atual usa `1.078` B de SRAM (`970` B livres) e `30.648` B de Flash (`72` B livres) no Nano com RDS.
+- **Tabelas em `PROGMEM`**: Tabelas de passos, subfaixas, bateria e limites de validação movidas para a memória Flash (`FlashAccess.h`). O build atual usa `1.074` B de SRAM (`974` B livres) e `30.570` B de Flash (`150` B livres) no Nano com RDS.
 
 ### Endurecimento adicional nesta árvore de código
 
@@ -338,6 +339,7 @@ Principais melhorias técnicas sobre a versão `v1.18` original:
 - **Navegar no menu não desgasta mais a EEPROM**: navegar ou fechar um menu sem mudanças não grava nada.
 - **Filtro RDS imprimível**: bytes PS/RT/PI fora do ASCII imprimível são substituídos por espaço.
 - **Polling suspenso com display desligado**: RDS, S-meter e bateria deixam de ser atualizados enquanto o OLED está desligado.
+- **RDS em tela cheia**: até 64 caracteres de RadioText em quatro linhas de 16 colunas; PS, 2B e 2A são alternados pelo botão do encoder.
 - **Sanitizadores fatais e CI**: os testes host param em erros do UBSan e o GitHub Actions compila as duas placas com e sem RDS.
 
 > **Nota:** esta árvore contém correções posteriores ao asset r3 publicado. Os tamanhos acima correspondem ao build atual; os arquivos r3 publicados precisam ser regravados a partir desta árvore. O banner `v1.18-r3` foi mantido de propósito.
@@ -351,7 +353,7 @@ Principais melhorias técnicas sobre a versão `v1.18` original:
   - **SW (Ondas Curtas)**: `1710` a `30000` kHz (sintonia contínua entre todas as sub-bandas, incluindo Faixa do Cidadão/PX 11m e todas as faixas de Radioamador HF de 160m a 10m)
   - **FM**: `64` a `108` MHz
 - **Modulações**: `AM`, `LSB`, `USB` e `CW` (telegrafia) em LW/MW/SW; `WFM` em FM.
-- **RDS Dinâmico no FM**: Exibe até 16 caracteres com Nome da Estação, Texto da Estação ou Informação de Programação abaixo da frequência.
+- **RDS em tela cheia no FM**: `MODE` abre uma página dedicada de 4×16 com até 64 caracteres do Nome da Estação (8), Informação da Estação/2B (32) ou Programação/2A (64). O botão do encoder alterna os três campos; `MODE`, sintonia ou qualquer ajuste volta à tela principal.
 - **Busca Automática de Estações (`Scan`)** em AM e FM.
 - **Passos de sintonia (`STEP`) variados**:
   - **AM**: `1k`, `5k`, `9k`, `10k`, `50k`, `100k`, `1M`
@@ -446,7 +448,7 @@ HEX_FILE="build/releases/ATS_EX_v1.18-r3_RDS.hex"
   -U "flash:w:$HEX_FILE:i"
 ```
 
-Ao terminar, o `avrdude` exibirá `30648 bytes of flash verified` e o rádio reiniciará exibindo a tela `ATS_EX v1.18-r3` / `JVCARDOSO 2026`.
+Ao terminar, o `avrdude` exibirá `30570 bytes of flash verified` e o rádio reiniciará exibindo a tela `ATS_EX v1.18-r3` / `JVCARDOSO 2026`.
 
 #### 4. Restaurar o backup anterior (Rollback)
 Caso queira voltar para o firmware salvo no passo 2:
@@ -503,14 +505,14 @@ python3 tests/run.py
   1. **Toque curto**: Ajusta a **largura de filtro (`Bandwidth`)** da modulação atual.
 - **`MODE`**:
   1. **Em LW/MW/SW**: Alterna entre as modulações **`AM`**, **`LSB`**, **`USB`** e **`CW`**.
-  2. **No FM**: Liga/desliga a linha de texto **RDS**.
+  2. **No FM**: Abre/fecha a página **RDS em tela cheia**.
 - **Giro do Encoder**:
   1. **Modo normal**: Sintoniza a frequência no passo escolhido.
   2. **Modo de configuração**: Navega entre os itens e altera seus valores.
 - **Botão do Encoder**:
   1. **Em AM/FM (com `Sca` = `On`)**: Inicia a **busca automática de estações (`Scan`)** na última direção utilizada. Gire o encoder ou aperte o botão novamente para **parar a busca**.
   2. **Em SSB/CW (ou com `Sca` = `Off`)**: Atalho rápido para trocar o **passo de sintonia (`Step`)**.
-  3. **No FM com RDS ativo**: Alterna entre os 3 modos de texto RDS (**Nome da Estação**, **Informação da Estação** e **Programação**).
+  3. **No FM com a página RDS ativa**: Alterna entre os 3 modos de texto RDS (**Nome da Estação**, **Informação da Estação** e **Programação**); cada campo ocupa até quatro linhas de 16 colunas.
   4. **Segurado ao ligar o rádio**: Executa o **Reset da EEPROM**; continue segurando até a barra de progresso terminar.
 
 ### Menu de Configurações (`Settings`)
